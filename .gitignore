@@ -1,0 +1,3 @@
+/build
+/sources/psi-shared/3rdparty/psi/include/psi/logger
+/sources/psi-shared/3rdparty/psi/lib/*[psi-logger]*
