@@ -1,0 +1,9 @@
+[submodule "3rdparty/psi-tools"]
+	path = 3rdparty/psi-tools
+	url = https://github.com/darkessence87/psi-tools.git
+[submodule "3rdparty/psi-thread"]
+	path = 3rdparty/psi-thread
+	url = https://github.com/darkessence87/psi-thread.git
+[submodule "3rdparty/psi-comm"]
+	path = 3rdparty/psi-comm
+	url = https://github.com/darkessence87/psi-comm.git
