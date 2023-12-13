@@ -1,8 +1,9 @@
+
 include_directories(
     ${3rdPARTY_DIR}/psi/include
-    ${3rdPARTY_DIR}/psi-comm/psi/include
-    ${3rdPARTY_DIR}/psi-thread/psi/include
-    ${3rdPARTY_DIR}/psi-tools/psi/include
+    ${psi_comm_dir}/psi/include
+    ${psi_thread_dir}/psi/include
+    ${psi_tools_dir}/psi/include
     include
     src
 )
@@ -16,7 +17,7 @@ set(SOURCES
 
 link_directories(
     ${3rdPARTY_DIR}/psi/lib/${SUB_DIR_LIBS}
-    ${3rdPARTY_DIR}/psi-thread/build/bin/${CMAKE_BUILD_TYPE}
+    ${psi_thread_dir}/build/bin/${CMAKE_BUILD_TYPE}
 )
 
 add_library(psi-shared STATIC ${SOURCES})
