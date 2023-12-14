@@ -1,9 +1,9 @@
 
 include_directories(
-    ${3rdPARTY_DIR}/psi/include
     ${psi_comm_dir}/psi/include
     ${psi_thread_dir}/psi/include
     ${psi_tools_dir}/psi/include
+    ${psi_logger_dir}/psi/include
     include
     src
 )
@@ -16,13 +16,14 @@ set(SOURCES
 )
 
 link_directories(
-    ${3rdPARTY_DIR}/psi/lib/${SUB_DIR_LIBS}
     ${psi_thread_dir}/build/bin/${CMAKE_BUILD_TYPE}
+    ${psi_logger_dir}/build/bin/${CMAKE_BUILD_TYPE}
 )
 
 add_library(psi-shared STATIC ${SOURCES})
 target_link_libraries(psi-shared
     psi-thread
+    psi-logger
 )
 
 # set(TEST_SRC
