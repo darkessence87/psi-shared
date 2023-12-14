@@ -16,15 +16,10 @@ set(SOURCES
 )
 
 link_directories(
-    ${psi_thread_dir}/build/bin/${CMAKE_BUILD_TYPE}
     ${psi_logger_dir}/build/bin/${CMAKE_BUILD_TYPE}
 )
 
 add_library(psi-shared STATIC ${SOURCES})
-target_link_libraries(psi-shared
-    psi-thread
-    psi-logger
-)
 
 # set(TEST_SRC
 #     tests/TimerTests.cpp
@@ -32,4 +27,4 @@ target_link_libraries(psi-shared
 # psi_make_tests("Shared" "${TEST_SRC}" "psi-shared")
 
 set(EXAMPLE_SRC_1.0 examples/1.0_Simple_SharedMemory/EntryPoint.cpp)
-psi_make_examples("1.0_Simple_SharedMemory" "${EXAMPLE_SRC_1.0}" "psi-shared")
+psi_make_examples("1.0_Simple_SharedMemory" "${EXAMPLE_SRC_1.0}" "psi-logger;psi-shared")
