@@ -7,3 +7,6 @@
 [submodule "3rdparty/psi-comm"]
 	path = 3rdparty/psi-comm
 	url = https://github.com/darkessence87/psi-comm.git
+[submodule "3rdparty/psi-gtests"]
+	path = 3rdparty/psi-gtests
+	url = https://github.com/darkessence87/psi-gtests.git
