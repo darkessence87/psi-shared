@@ -10,7 +10,7 @@ constexpr auto fnPerTupleImpl(F &&fn, std::tuple<T...> &t, std::index_sequence<I
 #ifdef __linux__
     __attribute__((__unused__)) auto x = {fn(std::get<Index>(t))...};
 #else
-    auto x = {fn(std::get<Index>(t))...};
+    [[maybe_unused]] auto x = {fn(std::get<Index>(t))...};
 #endif
 }
 
@@ -20,7 +20,7 @@ constexpr auto fnPerTupleImpl(F &&fn, const std::tuple<T...> &t, std::index_sequ
 #ifdef __linux__
     __attribute__((__unused__)) auto x = {fn(std::get<Index>(t))...};
 #else
-    auto x = {fn(std::get<Index>(t))...};
+    [[maybe_unused]] auto x = {fn(std::get<Index>(t))...};
 #endif
 }
 

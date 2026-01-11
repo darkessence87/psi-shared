@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <condition_variable>
 #include <future>
 #include <list>
@@ -260,7 +261,7 @@ private:
         CallbackInfo cbInfo;
         cbInfo.timeout = std::chrono::high_resolution_clock().now() + std::chrono::milliseconds(timeout);
         cbInfo.cbIndex = cbIndex;
-        cbInfo.fn = [=](uint8_t *data) {
+        cbInfo.fn = [=, this](uint8_t *data) {
             auto fnArgTypes = exportFunctionArgTypes(cb);
             if (data == nullptr) {
                 std::cerr << "methodId: " << methodId << ", clientId: " << m_clientId << ", callId: " << callId
