@@ -12,6 +12,7 @@ set(SOURCES
 )
 
 add_library(psi-shared STATIC ${SOURCES})
+psi_config_target(psi-shared)
 
 # set(TEST_SRC
 #     tests/TimerTests.cpp
