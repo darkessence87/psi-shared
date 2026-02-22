@@ -88,9 +88,9 @@ struct MemberFnWrapper {
                         return 1;
                     },
                     callArgs);
-                std::get<0>(cbType) = [cb](auto... args) {
+                std::get<0>(cbType) = [cb](auto... args_) {
                     uint8_t data[512] = {};
-                    const auto n = serializer::serializeType(data, args...);
+                    const auto n = serializer::serializeType(data, args_...);
                     cb(data, n);
                 };
                 auto params = std::tuple_cat(std::tuple<T &>(caller), callArgs, cbType);

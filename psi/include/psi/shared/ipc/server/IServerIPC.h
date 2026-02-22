@@ -27,7 +27,7 @@ public:
     {
     }
 
-    virtual ~IServerIPC() = default;
+    virtual ~IServerIPC() override = default;
 
     virtual T &server() = 0;
     virtual FnServiceMap<T> generateFnMap() = 0;

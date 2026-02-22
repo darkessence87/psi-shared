@@ -7,7 +7,7 @@
 #include <unistd.h>
 #endif
 #ifdef _WIN32
-#include <windows.h>
+#include <Windows.h>
 #endif
 
 #include "psi/shared/IBaseSharedMemoryObject.hpp"

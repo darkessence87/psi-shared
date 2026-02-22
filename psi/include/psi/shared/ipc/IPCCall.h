@@ -16,9 +16,9 @@ struct IPCCall {
     {
     }
 
-    IPCCall(uint16_t method, uint16_t client, size_t call, size_t cbIndex)
+    IPCCall(uint16_t method, uint16_t client, size_t call, size_t cbIndex_)
         : callId(call)
-        , cbIndex(cbIndex)
+        , cbIndex(cbIndex_)
         , methodId(method)
         , clientId(client)
     {

@@ -18,7 +18,7 @@ Mutex::Mutex(const std::string &name)
         m_handle = sem_open(m_name.c_str(), O_CREAT, S_IRUSR | S_IWUSR, 1);
     }
 #elif _WIN32
-    m_handle = CreateMutex(NULL, 0, m_name.c_str());
+    m_handle = CreateMutex(nullptr, 0, m_name.c_str());
 #endif
 }
 

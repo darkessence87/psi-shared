@@ -11,13 +11,15 @@ set(SOURCES
     src/psi/shared/ipc/IPCTemplates.cpp
 )
 
-add_library(psi-shared STATIC ${SOURCES})
-psi_config_target(psi-shared)
+set (target_lib "psi-shared")
 
-# set(TEST_SRC
-#     tests/TimerTests.cpp
-# )
-# psi_make_tests("Shared" "${TEST_SRC}" "psi-shared")
+add_library(${target_lib} STATIC ${SOURCES})
+psi_config_target(${target_lib})
+
+set(TEST_SRC
+    tests/SerializeDeserialize_Tests.cpp
+)
+psi_make_tests("Shared" "${TEST_SRC}" "${target_lib}")
 
 set(EXAMPLE_SRC_1.0 examples/1.0_Simple_SharedMemory/EntryPoint.cpp)
-psi_make_examples("1.0_Simple_SharedMemory" "${EXAMPLE_SRC_1.0}" "psi-shared")
+psi_make_examples("1.0_Simple_SharedMemory" "${EXAMPLE_SRC_1.0}" "${target_lib}")

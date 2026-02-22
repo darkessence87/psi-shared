@@ -12,15 +12,9 @@ struct MappedFile {
     std::string name = "Unknown";
     void *handle = nullptr;
 };
-#elif __arm__
-struct MappedFile {
-    int id = -1;
-    std::string name = "Unknown";
-    void *handle = nullptr;
-};
 #elif _WIN32
 struct MappedFile {
-    void *id = NULL;
+    void *id = nullptr;
     std::string name = "Unknown";
     void *handle = nullptr;
 };

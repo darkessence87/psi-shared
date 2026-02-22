@@ -10,15 +10,15 @@ enum class CallStatus
 
 template <typename... A>
 struct CallStruct {
-    CallStruct(uint16_t methodId, A... args)
-        : methodId(methodId)
-        , args(args...)
+    CallStruct(uint16_t methodId_, A... args_)
+        : methodId(methodId_)
+        , args(args_...)
     {
     }
 
-    CallStruct(uint16_t methodId, std::tuple<A...> args)
-        : methodId(methodId)
-        , args(args)
+    CallStruct(uint16_t methodId_, std::tuple<A...> args_)
+        : methodId(methodId_)
+        , args(args_)
     {
     }
 

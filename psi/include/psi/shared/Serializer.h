@@ -3,82 +3,77 @@
 #include <stdint.h>
 #include <string>
 
+#include "psi/tools/Tools.h"
+
 namespace psi::ipc::serializer {
 
 template <typename T>
-inline size_t serializeType(uint8_t *buffer, const T &arg)
+inline uint64_t serializeType(uint8_t *buffer, const T &arg)
 {
-    const size_t sz = sizeof(T);
-    memcpy(buffer, &arg, sz);
+    static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
+
+    const uint64_t sz = sizeof(T);
+    tools::mem_copy(buffer, 0, &arg, 0, sz);
     return sz;
 }
 
 template <typename T, typename... Args>
-inline size_t serializeType(uint8_t *buffer, const T &arg, Args &&...args)
+inline uint64_t serializeType(uint8_t *buffer, const T &arg, Args &&...args)
 {
-    size_t r = serializeType<T>(buffer, arg);
-    r += serializeType(buffer + r, std::forward<Args>(args)...);
-    return r;
+    uint64_t sz = serializeType<T>(buffer, arg);
+    sz += serializeType(tools::shift_ptr(buffer, sz), std::forward<Args>(args)...);
+    return sz;
 }
 
-inline size_t serializeType(uint8_t *)
+inline uint64_t serializeType(uint8_t *)
 {
     return 0;
 }
 
 template <>
-inline size_t serializeType<std::string>(uint8_t *buffer, const std::string &str)
+inline uint64_t serializeType<std::string>(uint8_t *buffer, const std::string &str)
 {
-    size_t len = str.size();
-    size_t sz = serializeType(buffer, len);
-    memcpy(&buffer[0] + sz, str.c_str(), len);
-    return sz + len;
-}
-
-inline size_t serializeType(uint8_t *buffer, const std::string &str)
-{
-    size_t len = str.size();
-    size_t sz = serializeType(buffer, len);
-    memcpy(&buffer[0] + sz, str.c_str(), len);
+    const uint64_t len = str.size();
+    const uint64_t sz = serializeType(buffer, len);
+    tools::mem_copy(buffer, sz, str.data(), 0, len);
     return sz + len;
 }
 
 template <typename T>
-inline size_t sizeOfArgs(const T &)
+inline uint64_t sizeOfArgs(const T &)
 {
     return sizeof(T);
 }
 
 template <typename T, typename... Args>
-inline size_t sizeOfArgs(const T &arg, Args &&...args)
+inline uint64_t sizeOfArgs(const T &arg, Args &&...args)
 {
-    size_t r = sizeOfArgs<T>(arg);
+    uint64_t r = sizeOfArgs<T>(arg);
     r += sizeOfArgs(std::forward<Args>(args)...);
     return r;
 }
 
 template <>
-inline size_t sizeOfArgs<std::string>(const std::string &arg)
+inline uint64_t sizeOfArgs<std::string>(const std::string &arg)
 {
-    return sizeof(size_t) + arg.size();
+    return sizeof(uint64_t) + arg.size();
 }
 
-inline size_t sizeOfArgs(const std::string &arg)
+inline uint64_t sizeOfArgs(const std::string &arg)
 {
-    return sizeof(size_t) + arg.size();
+    return sizeof(uint64_t) + arg.size();
 }
 
 template <typename R>
-inline void serializeTuple(uint8_t *buffer, const R &data, size_t &sz)
+inline void serializeTuple(uint8_t *buffer, const R &data, uint64_t &sz)
 {
-    sz += serializeType<R>(buffer + sz, data);
+    sz += serializeType<R>(tools::shift_ptr(buffer, sz), data);
 }
 
 template <>
-inline void serializeTuple<std::string>(uint8_t *buffer, const std::string &data, size_t &sz)
+inline void serializeTuple<std::string>(uint8_t *buffer, const std::string &data, uint64_t &sz)
 {
-    serializeType<std::string>(buffer + sz, data);
-    sz += sizeof(size_t) + data.size();
+    sz += serializeType<std::string>(tools::shift_ptr(buffer, sz), data);
 }
 
 } // namespace psi::ipc::serializer

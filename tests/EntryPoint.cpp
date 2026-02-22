@@ -1,5 +1,7 @@
 #include "psi/test/psi_test.h"
 
+#include <span>
+
 #ifdef PSI_LOGGER
 #include "psi/logger/Logger.h"
 #else

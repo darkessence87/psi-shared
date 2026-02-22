@@ -4,7 +4,7 @@
 #include <semaphore.h>
 using Semaphore = sem_t*;
 #elif _WIN32
-#include <windows.h>
+#include <Windows.h>
 using Semaphore = HANDLE;
 #endif
 
