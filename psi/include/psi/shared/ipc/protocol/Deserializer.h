@@ -5,8 +5,6 @@
 #include <string>
 #include <tuple>
 
-#include "psi/tools/Tools.h"
-
 namespace psi::ipc::deserializer {
 
 template <typename R>
@@ -15,7 +13,11 @@ inline R deserializeType(const uint8_t *data, uint64_t offset = 0)
     static_assert(std::is_trivially_copyable_v<R>, "R must be trivially copyable");
 
     R result;
-    tools::mem_copy(&result, 0, data, offset, sizeof(R));
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-libc-call"
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+    std::memcpy(&result, data + offset, sizeof(R));
+#pragma clang diagnostic pop
     return result;
 }
 
@@ -25,7 +27,11 @@ inline std::string deserializeType<std::string>(const uint8_t *const data, uint6
     const uint64_t len = deserializeType<uint64_t>(data, offset);
     std::string result;
     result.resize(len);
-    tools::mem_copy(result.data(), 0, data, offset + sizeof(uint64_t), len);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-libc-call"
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+    std::memcpy(result.data(), data + offset + sizeof(uint64_t), len);
+#pragma clang diagnostic pop
     return result;
 }
 

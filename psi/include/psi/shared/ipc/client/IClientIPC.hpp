@@ -7,10 +7,9 @@
 
 #include "psi/comm/Attribute.h"
 #include "psi/comm/SafeCaller.h"
-#include "psi/shared/Deserializer.h"
-#include "psi/shared/ISharedMemoryManager.hpp"
-#include "psi/shared/Serializer.h"
 #include "psi/shared/ipc/IPCCall.h"
+#include "psi/shared/ipc/protocol/Deserializer.h"
+#include "psi/shared/ipc/protocol/Serializer.h"
 #include "psi/shared/ipc/space/CallSpace.h"
 #include "psi/shared/ipc/space/CallbackSpace.h"
 #include "psi/shared/ipc/space/EventSpace.h"
@@ -19,22 +18,16 @@
 #include "TemplateHelpers.h"
 #include "Types.h"
 
+#include "psi/shared/i_sm_managers.h"
+
 namespace psi::ipc::client {
 
-template <typename T>
-using ServiceMemory = ISharedMemoryManager<T, SynchType::InterProcess>;
-
-template <typename T>
-using ServiceMemoryPtr = std::shared_ptr<ServiceMemory<T>>;
-
-template <typename T>
-using SharedMemory = IBaseSharedMemoryObject<T, SynchType::InterProcess>;
-
-template <typename T>
-using SharedMemoryPtr = std::shared_ptr<SharedMemory<T>>;
+template <typename C>
+using SharedMemoryPtr = std::shared_ptr<i_sm_object<C>>;
 
 #define INVOKE_SERVER_FN(methodId, ...) callServer(psi::ipc::client::CallStruct {methodId, __VA_ARGS__})
-#define INVOKE_SERVER_FN_RETURN(returnType, methodId, ...) callServer<returnType>(psi::ipc::client::CallStruct {methodId, __VA_ARGS__})
+#define INVOKE_SERVER_FN_RETURN(returnType, methodId, ...)                                                             \
+    callServer<returnType>(psi::ipc::client::CallStruct {methodId, __VA_ARGS__})
 
 class IClientIPC
 {
@@ -54,27 +47,33 @@ protected:
     void callServer(CallStruct<A...> args, int timeout = 10000)
     {
         auto callArgs = std::apply(
-            [](auto... ts) {
-                auto tt = std::tuple_cat(std::conditional_t<(std::is_trivially_copyable<decltype(ts)>::value
-                                                             || std::is_same<std::string, decltype(ts)>::value),
-                                                            std::tuple<decltype(ts)>,
-                                                            std::tuple<>> {}...);
-                copy_tuple(std::tuple(ts...), tt);
-                return tt;
+            [](auto &&...ts) {
+                return std::tuple_cat(([](auto &&v) {
+                    using T = std::decay_t<decltype(v)>;
+
+                    if constexpr (std::is_trivially_copyable_v<T> || std::is_same_v<T, std::string>) {
+                        return std::tuple<T>(std::forward<decltype(v)>(v));
+                    } else {
+                        return std::tuple<>();
+                    }
+                }(std::forward<decltype(ts)>(ts)))...);
             },
-            std::tuple<A...>(args.args));
+            args.args);
         auto cbType = std::apply(
-            [](auto... ts) {
-                auto tt = std::tuple_cat(std::conditional_t<(!std::is_trivially_copyable<decltype(ts)>::value
-                                                             && !std::is_same<std::string, decltype(ts)>::value),
-                                                            std::tuple<decltype(ts)>,
+            [](auto &&...ts) {
+                auto tt = std::tuple_cat(std::conditional_t<(!std::is_trivially_copyable_v<std::decay_t<decltype(ts)>>
+                                                             && !std::is_same_v<std::decay_t<decltype(ts)>, std::string>),
+                                                            std::tuple<std::decay_t<decltype(ts)>>,
                                                             std::tuple<>> {}...);
+
                 if constexpr (std::tuple_size_v<decltype(tt)> != 0) {
-                    std::get<0>(tt) = std::get<sizeof...(A) - 1u>(std::tuple(ts...));
+                    std::get<0>(tt) =
+                        std::get<sizeof...(ts) - 1>(std::forward_as_tuple(std::forward<decltype(ts)>(ts)...));
                 }
-                return tt;
+
+                return std::move(tt);
             },
-            std::tuple<A...>(args.args));
+            args.args);
 
         static size_t callId = 0;
         ++callId;
@@ -85,17 +84,25 @@ protected:
         }
         // case 2: args, no callback
         else if constexpr (std::tuple_size_v<decltype(cbType)> == 0) {
-            pushCallWithArgs(callArgs, args.methodId, callId);
+            pushCallWithArgs(callArgs, args.methodId, callId, 0);
         }
         // case 3: no args, callback
         else if constexpr (std::tuple_size_v<decltype(callArgs)> == 0) {
             auto cbIndex = pushCb(args.methodId, callId, std::get<0>(cbType), timeout);
-            pushCallWithNoArgs(args.methodId, callId, cbIndex);
+            if (!cbIndex.has_value()) {
+                std::cout << "Not enough space for callback processing, callId: " << callId << std::endl;
+                return;
+            }
+            pushCallWithNoArgs(args.methodId, callId, cbIndex.value());
         }
         // case 4: args, callback
         else {
             auto cbIndex = pushCb(args.methodId, callId, std::get<0>(cbType), timeout);
-            pushCallWithArgs(callArgs, args.methodId, callId, cbIndex);
+            if (!cbIndex.has_value()) {
+                std::cout << "Not enough space for callback processing, callId: " << callId << std::endl;
+                return;
+            }
+            pushCallWithArgs(callArgs, args.methodId, callId, cbIndex.value());
         }
     }
 
@@ -180,87 +187,91 @@ protected:
     void unsubscribeFromEventUpdates(size_t clientId);
 
 private:
-    template <typename T>
-    SharedMemoryPtr<T> connectToService(const std::string &name)
+    template <typename C>
+    std::shared_ptr<i_sm_object<C>> get_sm_object(const std::shared_ptr<i_sm_manager> &base)
     {
-        auto mem = ServiceMemory<T>::getInstance(name);
+        auto typed = std::dynamic_pointer_cast<i_typed_sm_manager<C>>(base);
+        return typed ? typed->getSharedMemory() : nullptr;
+    }
+
+    template <typename C>
+    SharedMemoryPtr<C> connectToService(const std::string &name)
+    {
+        std::shared_ptr<i_sm_manager> mem = nullptr;
+        if constexpr (std::is_same_v<C, CallSpace<>>) {
+            mem = i_sm_managers::create_CallSpace(name);
+        }
+        if constexpr (std::is_same_v<C, CallbackSpace<>>) {
+            mem = i_sm_managers::create_CallbackSpace(name);
+        }
+        if constexpr (std::is_same_v<C, EventSpace<>>) {
+            mem = i_sm_managers::create_EventSpace(name);
+        }
+
         if (mem->isShared()) {
             std::cout << "[IClientIPC] Connected to existing service [" << mem->name() << "]" << std::endl;
             mem->loadFromShared();
         } else {
-            static T space = T();
-            mem->loadToShared(&space);
+            static C space = C();
+            mem->loadToShared(&space, sizeof(C));
             std::cout << "[IClientIPC] Connected to new service [" << mem->name() << "]" << std::endl;
         }
 
-        return mem->getSharedMemory();
+        return get_sm_object<C>(mem);
     }
 
-    void pushCallWithNoArgs(uint16_t methodId, size_t callId, size_t cbIndex)
+    void pushCallWithNoArgs(uint16_t methodId, uint64_t callId, uint16_t cbIndex)
     {
-        uint8_t serializedCall[512] = {'\0'};
-        IPCCall callInfo(methodId, m_clientId, callId, cbIndex);
-        const auto n = serializer::serializeType(serializedCall, callInfo);
-        serializer::serializeType(serializedCall + n, uint16_t(0));
+        uint8_t serializedCall[MAX_CALL_SZ] = {'\0'};
+        IPCCall callInfo {callId, methodId, m_clientId, cbIndex, 0u};
+        const auto n = callInfo.serialize(serializedCall);
         m_callMemory->lock();
         m_callMemory->read()->push(serializedCall, 2 + n);
         m_callMemory->unlock();
-    };
+    }
 
     template <typename... A>
-    void pushCallWithArgs(const std::tuple<A...> &callArgs,
-                          uint16_t methodId,
-                          size_t callId,
-                          std::optional<size_t> cbIndex = {})
+    void pushCallWithArgs(const std::tuple<A...> &call_args, uint16_t method_id, size_t call_id, uint16_t cb_index)
     {
-        uint8_t serializedCall[512] = {'\0'};
-        IPCCall callInfo(methodId, m_clientId, callId, cbIndex.has_value() ? cbIndex.value() : 0);
-        auto n = serializer::serializeType(serializedCall, callInfo);
-
-        size_t argsSize = 0;
+        uint16_t args_sz = 0;
         fnPerTuple<0u>(
             [&](const auto &arg) -> int {
-                argsSize += serializer::sizeOfArgs(arg);
+                args_sz += serializer::sizeOfArgs(arg);
                 return 1;
             },
-            callArgs);
+            call_args);
 
-        if (argsSize > 512 - 2 - n) {
+        if (args_sz > MAX_CALL_SZ - IPCCall::HEAD_SZ) {
             std::cerr << "Could not process"
-                      << " methodId: " << methodId << ", clientId: " << m_clientId << ", callId: " << callId
-                      << " as call arguments are too big (" << argsSize << ")!" << std::endl;
+                      << " methodId: " << method_id << ", clientId: " << m_clientId << ", callId: " << call_id
+                      << " as call arguments are too big (" << args_sz << ")!" << std::endl;
             return;
         }
-        uint8_t call[512] = {'\0'};
-        size_t callSz = 0;
-        fnPerTuple<0u>(
-            [&](const auto &arg) -> int {
-                serializer::serializeTuple(call, arg, callSz);
-                return 1;
-            },
-            callArgs);
 
-        serializer::serializeType(serializedCall + n, static_cast<uint16_t>(callSz));
-        memcpy(serializedCall + 2 + n, call, callSz);
+        uint8_t serialized_call[MAX_CALL_SZ] = {'\0'};
+
+        IPCCall call_info {call_id, method_id, m_clientId, cb_index};
+        uint32_t serialized_sz = call_info.serialize_with_args(serialized_call, call_args);
+
         m_callMemory->lock();
-        m_callMemory->read()->push(serializedCall, 2 + n + callSz);
+        m_callMemory->read()->push(serialized_call, serialized_sz);
         m_callMemory->unlock();
     }
 
     template <typename CbType>
-    size_t pushCb(uint16_t methodId, size_t callId, CbType cb, int timeout)
+    std::optional<uint16_t> pushCb(uint16_t methodId, size_t callId, CbType cb, int timeout)
     {
         m_cbMemory->lock();
-        const size_t cbIndex = m_cbMemory->read()->pushCallback();
+        const auto cbIndex = m_cbMemory->read()->pushCallback();
         m_cbMemory->unlock();
 
-        if (!cbIndex) {
+        if (!cbIndex.has_value()) {
             return cbIndex;
         }
 
         CallbackInfo cbInfo;
         cbInfo.timeout = std::chrono::high_resolution_clock().now() + std::chrono::milliseconds(timeout);
-        cbInfo.cbIndex = cbIndex;
+        cbInfo.cbIndex = cbIndex.value();
         cbInfo.fn = [=, this](uint8_t *data) {
             auto fnArgTypes = exportFunctionArgTypes(cb);
             if (data == nullptr) {
@@ -281,7 +292,6 @@ private:
                             return 1;
                         },
                         fnArgTypes);
-                    delete[] data;
                     std::apply(cb, fnArgTypes);
                 }
             }
@@ -308,6 +318,7 @@ private:
     std::atomic<bool> m_isTrackingConnection = false;
     uint16_t m_clientId = 0;
 
+    static constexpr uint16_t MAX_CALL_SZ = CallSpace<>::CALL_SZ;
     SharedMemoryPtr<CallSpace<>> m_callMemory;
     SharedMemoryPtr<CallbackSpace<>> m_cbMemory;
     SharedMemoryPtr<EventSpace<>> m_evMemory;
@@ -328,7 +339,7 @@ private:
 
     struct CallbackInfo final {
         using Callback = std::function<void(uint8_t *)>;
-        size_t cbIndex = 0;
+        uint16_t cbIndex = 0;
         std::chrono::time_point<std::chrono::high_resolution_clock> timeout;
         Callback fn;
     };

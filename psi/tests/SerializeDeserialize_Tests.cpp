@@ -2,8 +2,8 @@
 #include "psi/test/TestHelper.h"
 #include "psi/test/psi_mock.h"
 
-#include "psi/shared/Deserializer.h"
-#include "psi/shared/Serializer.h"
+#include "psi/shared/ipc/protocol/Deserializer.h"
+#include "psi/shared/ipc/protocol/Serializer.h"
 
 using namespace psi::ipc;
 using namespace psi::test;
@@ -52,7 +52,7 @@ TEST(SerializeDeserialize_Tests, StringSingle)
     uint8_t data[256] = {};
     auto sz = serializer::serializeType(data, s);
 
-    ASSERT_EQ(sz, sizeof(uint64_t) + s.size());
+    EXPECT_EQ(sz, sizeof(uint64_t) + s.size());
 
     auto out = deserializer::deserializeType<std::string>(data, 0);
     EXPECT_EQ(out, s);

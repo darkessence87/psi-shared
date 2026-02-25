@@ -47,12 +47,12 @@ void IClientIPC::disconnect()
 
     m_isActive = false;
 
-    m_conditionCbData.notify_one();
+    m_conditionCbData.notify_all();
     if (m_cbDataThread.joinable()) {
         m_cbDataThread.join();
     }
 
-    m_conditionEvData.notify_one();
+    m_conditionEvData.notify_all();
     if (m_evDataThread.joinable()) {
         m_evDataThread.join();
     }
@@ -110,18 +110,28 @@ void IClientIPC::readCbData()
 
             std::vector<std::function<void()>> callbacks;
             for (auto itr = m_cbDataSubs.begin(); itr != m_cbDataSubs.end();) {
-                if (itr->get()->timeout < std::chrono::high_resolution_clock().now() || !m_isActive) {
-                    callbacks.emplace_back(std::bind(itr->get()->fn, nullptr));
+                auto *sub = itr->get();
+                if (sub->timeout < std::chrono::high_resolution_clock().now() || !m_isActive) {
+                    callbacks.emplace_back([fn = sub->fn]() { fn(nullptr); });
                     itr = m_cbDataSubs.erase(itr);
                 } else {
-                    auto obj = m_cbMemory->read();
-                    if (obj->isCallbackAvailable(itr->get()->cbIndex)) {
-                        m_cbMemory->lock();
-                        obj = m_cbMemory->read();
-                        uint8_t *data = obj->popCallback(itr->get()->cbIndex);
-                        m_cbMemory->unlock();
+                    std::shared_ptr<uint8_t[]> cb_data;
 
-                        callbacks.emplace_back(std::bind(itr->get()->fn, data));
+                    m_cbMemory->lock();
+                    auto obj = m_cbMemory->read();
+                    if (obj->isCallbackAvailable(sub->cbIndex)) {
+                        if (auto cb_view = obj->popCallback(sub->cbIndex); cb_view.has_value()) {
+                            cb_data.reset(new uint8_t[cb_view->sz]);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-libc-call"
+                            std::memcpy(cb_data.get(), cb_view->data, cb_view->sz);
+#pragma clang diagnostic pop
+                        }
+                    }
+                    m_cbMemory->unlock();
+
+                    if (cb_data) {
+                        callbacks.emplace_back([fn = sub->fn, cb_data]() { fn(cb_data.get()); });
                         itr = m_cbDataSubs.erase(itr);
                     } else {
                         ++itr;
@@ -131,9 +141,9 @@ void IClientIPC::readCbData()
 
             lock.unlock();
 
-            for (auto cb : callbacks) {
+            for (auto& cb : callbacks) {
                 if (m_loop) {
-                    m_loop->invoke([cb]() { cb(); });
+                    m_loop->invoke([cb_ = std::move(cb)]() { cb_(); });
                 } else {
                     cb();
                 }

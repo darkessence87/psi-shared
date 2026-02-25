@@ -3,21 +3,19 @@
 #include <chrono>
 #include <thread>
 
-#include "psi/shared/ISharedMemoryManager.hpp"
-#include "psi/shared/Serializer.h"
+#include "psi/shared/ipc/protocol/Serializer.h"
 #include "psi/shared/ipc/space/CallSpace.h"
 #include "psi/shared/ipc/space/CallbackSpace.h"
 #include "psi/shared/ipc/space/EventSpace.h"
+
+#include "psi/shared/i_sm_managers.h"
 
 namespace psi::ipc::server {
 
 class IServerIPCBase
 {
-    template <typename T>
-    using ServiceMemory = ISharedMemoryManager<T, SynchType::InterProcess>;
-
-    template <typename T>
-    using ServiceMemoryPtr = std::shared_ptr<ServiceMemory<T>>;
+    template <typename C>
+    using ServiceMemoryPtr = std::shared_ptr<i_typed_sm_manager<C>>;
 
     using CallMemoryPtr = ServiceMemoryPtr<CallSpace<>>;
     using CbMemoryPtr = ServiceMemoryPtr<CallbackSpace<>>;
@@ -30,8 +28,8 @@ public:
     void run(std::chrono::microseconds = std::chrono::microseconds(1));
 
 protected:
-    virtual void onReadCallMemory(uint8_t *, size_t) = 0;
-    void onCallback(std::optional<size_t> cbIndex, const uint8_t *cbData, size_t cbLen);
+    virtual void onReadCallMemory(uint8_t *, uint32_t) = 0;
+    void onCallback(std::optional<uint16_t> cbIndex, const uint8_t *cbData, uint16_t cbLen);
 
     template <typename... Args>
     std::optional<size_t> registerEvent(const std::string &evName)
@@ -53,40 +51,61 @@ protected:
     }
 
 private:
-    template <typename T>
-    ServiceMemoryPtr<T> allocateMemory(const std::string &name)
+    template <typename C>
+    std::shared_ptr<i_sm_object<C>> get_sm_object(const std::shared_ptr<i_sm_manager> &base)
     {
-        auto mem = ServiceMemory<T>::getInstance(name);
-        if (mem->isShared()) {
-            mem->loadFromShared();
-            mem->getSharedMemory()->lock();
-            mem->getSharedMemory()->read()->setAvailable(true);
-            mem->getSharedMemory()->unlock();
-            std::cout << "[IServerIPCBase] Initialized service [" << mem->name() << "] for all connected clients" << std::endl;
-        } else {
-            static T space = T();
-            space.setAvailable(true);
-            mem->loadToShared(&space);
-            std::cout << "[IServerIPCBase] Created service [" << mem->name() << "]" << std::endl;
-        }
-        return mem;
+        auto typed = std::dynamic_pointer_cast<i_typed_sm_manager<C>>(base);
+        return typed ? typed->getSharedMemory() : nullptr;
     }
 
-    template <typename T>
-    void freeMemory(ServiceMemoryPtr<T> mem)
+    template <typename C>
+    ServiceMemoryPtr<C> allocateMemory(const std::string &name)
     {
-        if (!mem) {
+        std::shared_ptr<i_sm_manager> mgr = nullptr;
+        if constexpr (std::is_same_v<C, CallSpace<>>) {
+            mgr = i_sm_managers::create_CallSpace(name);
+        }
+        if constexpr (std::is_same_v<C, CallbackSpace<>>) {
+            mgr = i_sm_managers::create_CallbackSpace(name);
+        }
+        if constexpr (std::is_same_v<C, EventSpace<>>) {
+            mgr = i_sm_managers::create_EventSpace(name);
+        }
+
+        auto mem = get_sm_object<C>(mgr);
+
+        if (mgr->isShared()) {
+            mgr->loadFromShared();
+            mem->lock();
+            mem->read()->setAvailable(true);
+            mem->unlock();
+            std::cout << "[IServerIPCBase] Initialized service [" << mgr->name() << "] for all connected clients"
+                      << std::endl;
+        } else {
+            static C space = C();
+            space.setAvailable(true);
+            mgr->loadToShared(&space, sizeof(C));
+            std::cout << "[IServerIPCBase] Created service [" << mgr->name() << "]" << std::endl;
+        }
+
+        return std::dynamic_pointer_cast<i_typed_sm_manager<C>>(mgr);
+    }
+
+    template <typename C>
+    void freeMemory(ServiceMemoryPtr<C> mgr)
+    {
+        if (!mgr) {
             std::cout << "[IServerIPCBase] service is not created" << std::endl;
             return;
         }
 
-        auto ptr = mem->getSharedMemory();
-        ptr->lock();
-        auto obj = ptr->read();
+        auto mem = get_sm_object<C>(mgr);
+        mem->lock();
+        auto obj = mem->read();
         obj->setAvailable(false);
-        ptr->unlock();
+        mem->unlock();
 
-        std::cout << "[IServerIPCBase] Destroyed service [" << mem->name() << "]" << std::endl;
+        std::cout << "[IServerIPCBase] Destroyed service [" << mgr->name() << "]" << std::endl;
     }
 
     void readMemory();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <map>
 
 #include "IServerIPCBase.h"
 
@@ -35,44 +36,56 @@ public:
     void run(std::chrono::microseconds sleepTime = std::chrono::microseconds(1))
     {
         m_fnServiceMap = server().generateFnMap();
-        ((IServerIPCBase *)this)->run(sleepTime);
+        static_cast<IServerIPCBase*>(this)->run(sleepTime);
     }
 
 private:
-    void onReadCallMemory(uint8_t *queue, size_t queueSz) override
+    void onReadCallMemory(uint8_t *queue, uint32_t queueSz) override
     {
-        for (size_t i = 0; i < queueSz;) {
-            auto deserializedParams =
-                deserializer::deserializeTypeVariadic<IPCCall, uint16_t>(queue + i, 0, nullptr, nullptr);
-            const auto &ipcCall = std::get<0>(deserializedParams);
-            const auto callSz = std::get<1>(deserializedParams);
-            constexpr size_t headSz = sizeof(IPCCall) + 2;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+        for (uint32_t i = 0; i < queueSz;) {
+            if (i + IPCCall::HEAD_SZ > queueSz) {
+                break;
+            }
+            IPCCall ipcCall;
+            ipcCall.deserialize(queue, i);
+            i += IPCCall::HEAD_SZ;
 
-            if (auto fnItr = m_fnServiceMap.find(ipcCall.methodId); fnItr != m_fnServiceMap.end()) {
+            if (i + sizeof(uint16_t) > queueSz) {
+                break;
+            }
+            uint16_t callSz;
+            std::memcpy(&callSz, queue + i, sizeof(uint16_t));
+            i += sizeof(uint16_t);
+
+            if (i + callSz > queueSz) {
+                break;
+            }
+            if (auto fnItr = m_fnServiceMap.find(ipcCall.m_method_id); fnItr != m_fnServiceMap.end()) {
                 auto fn = fnItr->second;
                 // make fn data buffer
-                uint8_t *callData = new uint8_t[callSz]();
-                memcpy(callData, queue + i + headSz, callSz);
+                auto callData = std::shared_ptr<uint8_t[]>(new uint8_t[callSz]);
+                std::memcpy(callData.get(), queue + i, callSz);
                 if (m_loop) {
-                    m_loop->invoke(m_guard.invoke([this, fn, callData, cbIndex = ipcCall.cbIndex]() {
+                    m_loop->invoke(m_guard.invoke([this, fn, callData, cbIndex = ipcCall.m_cb_index]() {
                         // std::cout << callData.asHexString() << std::endl;
-                        fn(server(), callData, 0, m_guard.invoke([this, cbIndex](auto... args) {
+                        fn(server(), callData.get(), m_guard.invoke([this, cbIndex](auto... args) {
                             this->onCallback(cbIndex, args...);
                         }));
-                        delete[] callData;
                     }));
                 } else {
-                    fn(server(), callData, 0, m_guard.invoke([this, cbIndex = ipcCall.cbIndex](auto... args) {
+                    fn(server(), callData.get(), m_guard.invoke([this, cbIndex = ipcCall.m_cb_index](auto... args) {
                         this->onCallback(cbIndex, args...);
                     }));
-                    delete[] callData;
                 }
             } else {
-                std::cerr << "Unsupported method: " << tools::to_hex_string(ipcCall.methodId) << std::endl;
+                std::cerr << "Unsupported method: " << tools::to_hex_string(ipcCall.m_method_id) << std::endl;
             }
 
-            i += headSz + callSz;
+            i += callSz;
         }
+#pragma clang diagnostic pop
     }
 
 private:

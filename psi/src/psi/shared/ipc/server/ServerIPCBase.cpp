@@ -39,25 +39,39 @@ void IServerIPCBase::readMemory()
         return;
     }
 
-    m_callMemory->getSharedMemory()->lock();
-    auto callObj = m_callMemory->getSharedMemory()->read();
-    size_t queueSz = 0;
-    uint8_t *queue = callObj->pop(queueSz);
-    m_callMemory->getSharedMemory()->unlock();
+    auto mem = m_callMemory->getSharedMemory();
+    mem->lock();
 
-    onReadCallMemory(queue, queueSz);
-    delete[] queue;
+    auto obj = mem->read();
+    uint32_t dataSz = 0;
+    uint8_t *data = obj->pop(dataSz);
+    if (!data || dataSz == 0) {
+        mem->unlock();
+        return;
+    }
+
+    auto buffer = std::unique_ptr<uint8_t[]>(new uint8_t[dataSz]);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-libc-call"
+    std::memcpy(buffer.get(), data, dataSz);
+#pragma clang diagnostic pop
+
+    obj->clear();
+    mem->unlock();
+
+    onReadCallMemory(buffer.get(), dataSz);
 }
 
-void IServerIPCBase::onCallback(std::optional<size_t> cbIndex, const uint8_t *cbData, size_t cbLen)
+void IServerIPCBase::onCallback(std::optional<uint16_t> cbIndex, const uint8_t *cbData, uint16_t cbLen)
 {
     if (!cbIndex.has_value()) {
         return;
     }
 
-    m_cbMemory->getSharedMemory()->lock();
-    m_cbMemory->getSharedMemory()->read()->updateCallback(cbIndex.value(), cbData, cbLen);
-    m_cbMemory->getSharedMemory()->unlock();
+    auto mem = m_cbMemory->getSharedMemory();
+    mem->lock();
+    mem->read()->updateCallback(cbIndex.value(), cbData, cbLen);
+    mem->unlock();
 }
 
-} // namespace psi::ipc
+} // namespace psi::ipc::server

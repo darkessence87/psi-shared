@@ -1,29 +1,24 @@
 #pragma once
 
+#include <array>
 #include <iostream>
-
-//#include "common/Encryptor.h"
 
 namespace psi::ipc {
 
-template <size_t MAX_QUEUE_SIZE = 1024u, size_t MAX_DATA_LENGTH = 512u>
+template <uint16_t MAX_QUEUE_SIZE = 1024u, uint16_t MAX_DATA_LENGTH = 512u>
 class CallSpace final
 {
-    static constexpr size_t DATA_LENGTH = MAX_DATA_LENGTH * MAX_QUEUE_SIZE;
-    using Data = uint8_t[DATA_LENGTH];
+    static constexpr size_t DATA_LENGTH = static_cast<size_t>(MAX_DATA_LENGTH) * MAX_QUEUE_SIZE;
+    static_assert(DATA_LENGTH <= std::numeric_limits<uint32_t>::max(), "Index type too small for buffer");
+    using Data = std::array<uint8_t, DATA_LENGTH>;
 
 public:
+    static constexpr uint16_t CALL_SZ = MAX_DATA_LENGTH;
+
     CallSpace()
         : m_data()
     {
-        //memset(&m_key, uint8_t(0), 32u);
     }
-
-    /*CallSpace(const ByteBuffer &key)
-        : m_data()
-    {
-        memcpy(key.data(), m_key, 32u);
-    }*/
 
     void setAvailable(bool value)
     {
@@ -37,94 +32,50 @@ public:
 
     bool isDataAvailable() const
     {
-        return m_isDataAvailable;
+        return m_currentWriteIndex > 0;
     }
 
-    //void push(uint8_t *data, const size_t sz)
-    //{
-    //    const auto encoded = encode(data, sz);
-    //    uint8_t *encodedData = encoded.data();
-    //    size_t newSz = encoded.size() + 2;
-
-    //    /// @todo Cyclic buffer should be used here
-    //    if (m_currentWriteIndex + newSz >= DATA_LENGTH) {
-    //        std::cout << "Override data, queue is full!" << std::endl;
-    //        //return;
-    //        m_currentWriteIndex = 0;
-    //    }
-    //    // std::cout << "[push] m_currentWriteIndex: " << m_currentWriteIndex << std::endl;
-
-    //    const uint16_t checkSum = static_cast<uint16_t>(encoded.size());
-    //    memcpy(&m_data[m_currentWriteIndex], &checkSum, 2);
-    //    memcpy(&m_data[m_currentWriteIndex + 2], encodedData, encoded.size());
-    //    m_currentWriteIndex += newSz;
-    //    m_isDataAvailable = true;
-    //}
-
-    //uint8_t *pop(size_t &dataSz)
-    //{
-    //    // std::cout << "[pop] m_currentWriteIndex: " << m_currentWriteIndex << std::endl;
-    //    uint8_t *q = new uint8_t[m_currentWriteIndex]();
-
-    //    size_t w1 = 0;
-    //    size_t w2 = 0;
-    //    while (true) {
-    //        uint16_t sz = 0;
-    //        memcpy(&sz, &m_data[w1], 2);
-    //        if (sz == 0) {
-    //            break;
-    //        }
-
-    //        uint8_t *data = new uint8_t[sz];
-    //        memcpy(data, &m_data[w1 + 2], sz);
-    //        w1 += 2 + sz;
-    //        
-    //        const auto decoded = decode(data, sz);
-    //        memcpy(&q[w2], decoded.data(), decoded.size());
-    //        w2 += decoded.size();
-    //    }
-
-    //    dataSz = w2;
-
-    //    memset(&m_data, uint8_t(0), DATA_LENGTH);
-    //    m_currentWriteIndex = 0;
-    //    m_isDataAvailable = false;
-    //    return q;
-    //}
-
-    void push(uint8_t *data, const size_t sz)
+    void push(uint8_t *data, const uint32_t sz)
     {
+        if (!data || sz == 0) {
+            return;
+        }
+
         /// @todo Cyclic buffer should be used here
-        if (m_currentWriteIndex + sz >= DATA_LENGTH) {
+        if (m_currentWriteIndex + sz > DATA_LENGTH) {
             std::cout << "Override data, queue is full!" << std::endl;
-            //return;
             m_currentWriteIndex = 0;
         }
-        // std::cout << "[push] m_currentWriteIndex: " << m_currentWriteIndex << std::endl;
 
-        memcpy(&m_data[m_currentWriteIndex], data, sz);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-libc-call"
+        std::memcpy(&m_data[m_currentWriteIndex], data, sz);
+#pragma clang diagnostic pop
         m_currentWriteIndex += sz;
-        m_isDataAvailable = true;
     }
 
-    uint8_t *pop(size_t &dataSz)
+    uint8_t *pop(uint32_t &dataSz)
     {
-        // std::cout << "[pop] m_currentWriteIndex: " << m_currentWriteIndex << std::endl;
-        if (!m_currentWriteIndex) {
+        if (m_currentWriteIndex == 0) {
+            dataSz = 0;
             return nullptr;
         }
         dataSz = m_currentWriteIndex;
-        uint8_t *q = new uint8_t[m_currentWriteIndex]();
-        memcpy(q, m_data, m_currentWriteIndex);
-        memset(&m_data, uint8_t(0), DATA_LENGTH);
+        return &m_data[0];
+    }
+
+    void clear()
+    {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-libc-call"
+        std::memset(m_data.data(), 0, m_currentWriteIndex);
+#pragma clang diagnostic pop
         m_currentWriteIndex = 0;
-        m_isDataAvailable = false;
-        return q;
     }
 
     uint16_t generateClientId()
     {
-        if ((m_lastClientId + 1) == 0) {
+        if (m_lastClientId == std::numeric_limits<uint16_t>::max()) {
             std::cout << "Too many clients used" << std::endl;
             return 0;
         }
@@ -132,27 +83,9 @@ public:
     }
 
 private:
-    /*ByteBuffer encode(uint8_t *data, size_t sz)
-    {
-        ByteBuffer dataBuffer(data, sz);
-        ByteBuffer keyBuffer(32u);
-        keyBuffer.writeArray(m_key, 32u);
-        return Encryptor::encryptAes256(dataBuffer, keyBuffer);
-    }
-
-    ByteBuffer decode(uint8_t *data, size_t sz)
-    {
-        ByteBuffer keyBuffer(32u);
-        keyBuffer.writeArray(m_key, 32u);
-        return Encryptor::decryptAes256(ByteBuffer(std::move(data), sz), keyBuffer);
-    }*/
-
-private:
     Data m_data;
-    //uint8_t m_key[32];
     bool m_isAvailable = false;
-    bool m_isDataAvailable = false;
-    size_t m_currentWriteIndex = 0;
+    uint32_t m_currentWriteIndex = 0;
     uint16_t m_lastClientId = 0;
 };
 

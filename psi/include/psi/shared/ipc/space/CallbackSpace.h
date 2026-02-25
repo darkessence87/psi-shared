@@ -1,17 +1,35 @@
 #pragma once
 
-#include <iostream>
+#include <array>
+#include <optional>
 
 namespace psi::ipc {
 
-template <size_t MAX_QUEUE_SIZE = 1024u, size_t MAX_DATA_LENGTH = 512u>
+template <uint16_t MAX_QUEUE_SIZE = 1024u, uint16_t MAX_DATA_LENGTH = 512u>
 class CallbackSpace final
 {
-    using CallbackData = uint8_t[MAX_QUEUE_SIZE][1 + MAX_DATA_LENGTH];
+    static constexpr uint16_t STATUS_SLOT_SIZE = 1u;
+    static constexpr uint16_t SIZE_SLOT_SIZE = sizeof(uint16_t);
+    static constexpr uint16_t CALLBACK_SIZE = STATUS_SLOT_SIZE + SIZE_SLOT_SIZE + MAX_DATA_LENGTH;
+    using CallbackData = std::array<std::array<uint8_t, CALLBACK_SIZE>, MAX_QUEUE_SIZE>;
 
-    static constexpr size_t STATUS_INDEX = 0;
+    static constexpr uint16_t STATUS_INDEX = 0;
+    static constexpr uint16_t SIZE_INDEX = 1;
+    static constexpr uint16_t DATA_INDEX = 1 + SIZE_SLOT_SIZE;
+
+    enum class DataState : uint8_t
+    {
+        NoData = 0b00,
+        Pending = 0b01,
+        Ready = 0b11,
+    };
 
 public:
+    struct CallbackView {
+        uint8_t *data;
+        uint16_t sz;
+    };
+
     CallbackSpace()
         : m_cbData()
     {
@@ -27,57 +45,78 @@ public:
         return m_isAvailable;
     }
 
-    bool isCallbackAvailable(size_t cbIndex) const
+    bool isCallbackAvailable(uint16_t cbIndex) const
     {
-        return m_cbData[cbIndex - 1][STATUS_INDEX] == 0b11;
+        if (cbIndex >= MAX_QUEUE_SIZE) {
+            return false;
+        }
+
+        return m_cbData[cbIndex][STATUS_INDEX] == uint8_t(DataState::Ready);
     }
 
-    size_t pushCallback()
+    std::optional<uint16_t> pushCallback()
     {
-        for (size_t i = 0; i < MAX_QUEUE_SIZE; ++i) {
-            if (m_cbData[i][STATUS_INDEX] == 0b00) {
-                m_cbData[i][STATUS_INDEX] = 0b01;
-                return i + 1;
+        for (uint16_t i = 0; i < MAX_QUEUE_SIZE; ++i) {
+            if (m_cbData[i][STATUS_INDEX] == uint8_t(DataState::NoData)) {
+                m_cbData[i][STATUS_INDEX] = uint8_t(DataState::Pending);
+                return i;
             }
         }
 
-        std::cout << "[pushCallback] Not enough space for callback processing" << std::endl;
-        return 0;
+        return std::nullopt;
     }
 
-    void updateCallback(size_t cbIndex, const uint8_t *data, const size_t sz)
+    void updateCallback(uint16_t cbIndex, const uint8_t *data, const uint16_t sz)
     {
-        if (cbIndex == 0) {
-            std::cerr << "[updateCallback] Incorrect cbIndex" << std::endl;
+        if (cbIndex >= MAX_QUEUE_SIZE || sz > MAX_DATA_LENGTH) {
             return;
         }
 
-        if (m_cbData[cbIndex - 1][STATUS_INDEX] == 0b01) {
-            memcpy(&m_cbData[cbIndex - 1][STATUS_INDEX + 1], data, sz);
-            m_cbData[cbIndex - 1][STATUS_INDEX] = 0b11;
+        auto &cb = m_cbData[cbIndex];
+        if (cb[STATUS_INDEX] != uint8_t(DataState::Pending)) {
+            return;
         }
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-libc-call"
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+        std::memcpy(cb.data() + SIZE_INDEX, &sz, sizeof(sz));
+        std::memcpy(cb.data() + DATA_INDEX, data, sz);
+#pragma clang diagnostic pop
+
+        cb[STATUS_INDEX] = uint8_t(DataState::Ready);
     }
 
-    uint8_t *popCallback(size_t cbIndex)
+    std::optional<CallbackView> popCallback(uint16_t cbIndex)
     {
-        if (cbIndex == 0) {
-            std::cerr << "[popCallback] Incorrect cbIndex" << std::endl;
-            return nullptr;
+        if (cbIndex >= MAX_QUEUE_SIZE) {
+            return std::nullopt;
         }
 
-        if (m_cbData[cbIndex - 1][STATUS_INDEX] == 0b11) {
-            uint8_t *data = new uint8_t[MAX_DATA_LENGTH]();
-            memcpy(data, &m_cbData[cbIndex - 1][STATUS_INDEX] + 1, MAX_DATA_LENGTH);
-            memset(&m_cbData[cbIndex - 1], 0, 1 + MAX_DATA_LENGTH);
-            return data;
+        auto &cb = m_cbData[cbIndex];
+
+        if (cb[STATUS_INDEX] != uint8_t(DataState::Ready)) {
+            return std::nullopt;
         }
 
-        return nullptr;
+        cb[STATUS_INDEX] = uint8_t(DataState::NoData);
+        uint16_t cb_data_size;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-libc-call"
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+        std::memcpy(&cb_data_size, cb.data() + SIZE_INDEX, SIZE_SLOT_SIZE);
+
+        return CallbackView {cb.data() + DATA_INDEX, cb_data_size};
+#pragma clang diagnostic pop
     }
 
-    void clearCallback(size_t cbIndex)
+    void clearCallback(uint16_t cbIndex)
     {
-        memset(&m_cbData[cbIndex - 1], 0, 1 + MAX_DATA_LENGTH);
+        if (cbIndex >= MAX_QUEUE_SIZE) {
+            return;
+        }
+
+        m_cbData[cbIndex].fill(0);
     }
 
 private:

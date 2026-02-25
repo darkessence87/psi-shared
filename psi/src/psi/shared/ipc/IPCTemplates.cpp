@@ -1,19 +1,18 @@
-#include "psi/shared/BaseSharedMemoryObject.hpp"
-#include "psi/shared/SharedMemoryManager.hpp"
-#include "psi/shared/SharedMemoryObject.hpp"
-#include "psi/shared/SynchType.h"
+
 #include "psi/shared/ipc/space/CallSpace.h"
 #include "psi/shared/ipc/space/CallbackSpace.h"
 #include "psi/shared/ipc/space/EventSpace.h"
+#include "psi/shared/sm_manager_impl.h"
+#include "psi/shared/sm_object_impl.h"
 
 namespace psi {
 
-template class IBaseSharedMemoryObject<ipc::CallSpace<>, SynchType::InterProcess>;
-template class IBaseSharedMemoryObject<ipc::CallbackSpace<>, SynchType::InterProcess>;
-template class IBaseSharedMemoryObject<ipc::EventSpace<>, SynchType::InterProcess>;
+template class sm_object_impl<ipc::CallSpace<>>;
+template class sm_object_impl<ipc::CallbackSpace<>>;
+template class sm_object_impl<ipc::EventSpace<>>;
 
-template class ISharedMemoryManager<ipc::CallSpace<>, SynchType::InterProcess>;
-template class ISharedMemoryManager<ipc::CallbackSpace<>, SynchType::InterProcess>;
-template class ISharedMemoryManager<ipc::EventSpace<>, SynchType::InterProcess>;
+template class sm_manager_impl<ipc::CallSpace<>>;
+template class sm_manager_impl<ipc::CallbackSpace<>>;
+template class sm_manager_impl<ipc::EventSpace<>>;
 
 } // namespace psi

@@ -4,8 +4,8 @@
 #include <functional>
 #include <type_traits>
 
-#include "psi/shared/Deserializer.h"
-#include "psi/shared/Serializer.h"
+#include "psi/shared/ipc/protocol/Deserializer.h"
+#include "psi/shared/ipc/protocol/Serializer.h"
 
 namespace psi::ipc {
 
@@ -27,8 +27,8 @@ constexpr auto fnPerTuple(F &&fn, std::tuple<T...> &t)
 
 template <typename T>
 struct MemberFnWrapper {
-    using OnCallbackResult = std::function<void(const uint8_t *, size_t)>;
-    using Func = std::function<void(T &, const uint8_t *, size_t, OnCallbackResult)>;
+    using OnCallbackResult = std::function<void(const uint8_t *, uint16_t)>;
+    using Func = std::function<void(T &, const uint8_t *, OnCallbackResult)>;
 
     template <typename... A>
     MemberFnWrapper(void (T::*memberFn)(A...))
@@ -56,7 +56,8 @@ struct MemberFnWrapper {
         }
         // case 2: args, no callback
         else if constexpr (std::tuple_size_v<decltype(cbType)> == 0) {
-            m_any = Func([=](T &caller, const uint8_t *args, size_t offset, auto...) mutable {
+            m_any = Func([=](T &caller, const uint8_t *args, auto...) mutable {
+                size_t offset = 0;
                 fnPerTuple<0u>(
                     [&](auto &result) -> int {
                         deserializer::deserializeTuple(result, args, offset);
@@ -69,7 +70,7 @@ struct MemberFnWrapper {
         }
         // case 3: no args, callback
         else if constexpr (std::tuple_size_v<decltype(callArgs)> == 0) {
-            m_any = Func([=](T &caller, auto, auto, auto cb) mutable {
+            m_any = Func([=](T &caller, auto, auto cb) mutable {
                 std::get<0>(cbType) = [cb](auto... args) {
                     uint8_t data[512] = {};
                     const auto n = serializer::serializeType(data, args...);
@@ -81,7 +82,8 @@ struct MemberFnWrapper {
         }
         // case 4: args, callback
         else {
-            m_any = Func([=](T &caller, const uint8_t *args, size_t offset, auto cb) mutable {
+            m_any = Func([=](T &caller, const uint8_t *args, auto cb) mutable {
+                size_t offset = 0;
                 fnPerTuple<0u>(
                     [&](auto &result) -> int {
                         deserializer::deserializeTuple(result, args, offset);
@@ -121,7 +123,7 @@ struct MemberFnWrapper {
 
         // case 1: no args = empty call
         if constexpr (std::tuple_size_v<decltype(callArgs)> == 0 && std::tuple_size_v<decltype(cbType)> == 0) {
-            m_any = Func([=](T &caller, auto, auto, auto cb) mutable {
+            m_any = Func([=](T &caller, auto, auto cb) mutable {
                 R r = std::apply(memberFn, std::tuple<T &>(caller));
                 uint8_t data[512] = {};
                 const auto n = serializer::serializeType(data, r);
@@ -130,7 +132,8 @@ struct MemberFnWrapper {
         }
         // case 2: args
         else if constexpr (std::tuple_size_v<decltype(cbType)> == 0) {
-            m_any = Func([=](T &caller, const uint8_t *args, size_t offset, auto cb) mutable {
+            m_any = Func([=](T &caller, const uint8_t *args, auto cb) mutable {
+                size_t offset = 0;
                 fnPerTuple<0u>(
                     [&](auto &result) -> int {
                         deserializer::deserializeTuple(result, args, offset);
@@ -146,9 +149,9 @@ struct MemberFnWrapper {
         }
     }
 
-    void operator()(T &caller, const uint8_t *args, size_t offset, OnCallbackResult cb) const
+    void operator()(T &caller, const uint8_t *args, OnCallbackResult cb) const
     {
-        std::invoke(std::any_cast<Func>(m_any), caller, args, offset, cb);
+        std::invoke(std::any_cast<Func>(m_any), caller, args, cb);
     }
 
     std::any m_any;
