@@ -37,7 +37,7 @@ public:
     IClientIPC(const std::string &name, std::shared_ptr<psi::thread::ILoop>);
     virtual ~IClientIPC();
 
-    void connect();
+    bool connect();
     void disconnect();
 
     IsServerAvailableAttribute::Interface &isServerAvailableAttribute();
@@ -120,71 +120,46 @@ protected:
     }
 
     template <typename... Args>
-    std::optional<size_t> subscribeToEventUpdates(const std::string &evName, std::function<void(Args...)> onNotify)
+    std::optional<uint16_t> subscribeToEventUpdates(uint16_t event_id, std::function<void(Args...)> onNotify)
     {
-        m_evMemory->lock();
-        auto evIndex = m_evMemory->read()->eventId(evName.c_str());
-        auto evClientId = m_evMemory->read()->registerClient();
-        m_evMemory->unlock();
+        if (!m_evClientId.has_value()) {
+            m_evMemory->lock();
+            m_evClientId = m_evMemory->read()->registerClient();
+            m_evMemory->unlock();
 
-        if (!evIndex.has_value()) {
-            std::cerr << "Event [" << evName << "] is not registered or unsupported!" << std::endl;
-            return std::nullopt;
+            if (!m_evClientId.has_value())
+                return std::nullopt;
         }
 
-        if (!evClientId.has_value()) {
-            std::cerr << "Event [" << evName << "] can not be subscribed. Too many clients!" << std::endl;
-            return std::nullopt;
-        }
-
-        std::unique_ptr<EventInfo> evInfo = std::make_unique<EventInfo>(*this);
-        evInfo->evIndex = evIndex.value();
-        evInfo->m_evClientId = evClientId;
-
-        // evSize
-        if constexpr (sizeof...(Args) == 0) {
-            evInfo->evSize = 0;
-        } else {
-            fnPerTuple<0u>(
-                [&](const auto &arg) -> int {
-                    evInfo->evSize += serializer::sizeOfArgs(arg);
-                    return 1;
-                },
-                std::tuple<Args...>());
-        }
-
-        // evNotification
-        evInfo->ev = [evIndex, onNotify](uint8_t *data, size_t dataSz) {
-            auto fnArgTypes = exportFunctionArgTypes(onNotify);
-            if (data == nullptr) {
-                std::apply(onNotify, fnArgTypes);
+        std::unique_ptr<EventInfo> event_info = std::make_unique<EventInfo>();
+        event_info->event_id = event_id;
+        event_info->event_fn = [onNotify](const uint8_t *data, uint16_t) {
+            if constexpr (sizeof...(Args) == 0) {
+                onNotify();
+                return;
             } else {
-                if constexpr (std::tuple_size_v<decltype(fnArgTypes)> == 0) {
-                    onNotify();
-                } else {
-                    size_t offset = 0;
-                    while (offset < dataSz) {
-                        fnPerTuple<0u>(
-                            [&](auto &arg) -> int {
-                                deserializer::deserializeTuple(arg, data, offset);
-                                return 1;
-                            },
-                            fnArgTypes);
-                        std::apply(onNotify, fnArgTypes);
-                    }
-                    delete[] data;
-                }
+                auto argsTuple = exportFunctionArgTypes(onNotify);
+
+                size_t offset = 0;
+                fnPerTuple<0u>(
+                    [&](auto &arg) -> int {
+                        deserializer::deserializeTuple(arg, data, offset);
+                        return 1;
+                    },
+                    argsTuple);
+
+                std::apply(onNotify, argsTuple);
             }
         };
 
         std::unique_lock<std::mutex> lock(m_mtxEvData);
-        m_evDataListeners.emplace_back(std::move(evInfo));
+        m_evDataListeners.emplace_back(std::move(event_info));
         m_conditionEvData.notify_one();
 
-        return evClientId;
+        return m_evClientId;
     }
 
-    void unsubscribeFromEventUpdates(size_t clientId);
+    void unsubscribeFromEventUpdates(uint16_t clientId);
 
 private:
     template <typename C>
@@ -319,6 +294,7 @@ private:
     uint16_t m_clientId = 0;
 
     static constexpr uint16_t MAX_CALL_SZ = CallSpace<>::CALL_SZ;
+    static constexpr uint16_t MAX_EVENT_SZ = EventSpace<>::EVENT_SZ;
     SharedMemoryPtr<CallSpace<>> m_callMemory;
     SharedMemoryPtr<CallbackSpace<>> m_cbMemory;
     SharedMemoryPtr<EventSpace<>> m_evMemory;
@@ -346,31 +322,14 @@ private:
     std::list<std::unique_ptr<CallbackInfo>> m_cbDataSubs;
 
     struct EventInfo final {
-        using Event = std::function<void(uint8_t *, size_t)>;
-
-        EventInfo(IClientIPC &processClient)
-            : m_processClient(processClient)
-        {
-        }
-
-        ~EventInfo()
-        {
-            if (m_evClientId.has_value()) {
-                m_processClient.m_evMemory->lock();
-                m_processClient.m_evMemory->read()->unregisterClient(m_evClientId.value());
-                m_processClient.m_evMemory->unlock();
-            }
-        }
-
-        IClientIPC &m_processClient;
-        size_t evIndex = 0;
-        size_t evSize = 0;
-        std::optional<size_t> m_evClientId;
-        Event ev;
+        using EventFn = std::function<void(uint8_t *, size_t)>;
+        uint16_t event_id = 0;
+        EventFn event_fn;
     };
     std::list<std::unique_ptr<EventInfo>> m_evDataListeners;
+    std::optional<uint16_t> m_evClientId;
 
-    template <typename... Args>
+    template <uint16_t EventId, typename... Args>
     friend class IEventClientIPC;
 
     friend struct EventInfo;

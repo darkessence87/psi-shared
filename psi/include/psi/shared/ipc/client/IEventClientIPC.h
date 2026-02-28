@@ -1,33 +1,33 @@
 #pragma once
 
-#include "common/shared/ipc/IPCEvent.h"
-#include "common/shared/ipc/client/IClientIPC.hpp"
+#include "psi/shared/ipc/IPCEvent.h"
+#include "psi/shared/ipc/client/IClientIPC.hpp"
 
 namespace psi::ipc::client {
 
-template <typename... Args>
-class IEventClientIPC : public IPCEvent<Args...>
+template <uint16_t EventId, typename... Args>
+class IEventClientIPC : public IPCEvent<EventId, Args...>
 {
 public:
-    using Interface = IPCEvent<Args...>;
+    using Interface = IPCEvent<EventId, Args...>;
     using OnEventUpdateFn = typename Interface::OnEventUpdateFn;
-    class Listener;
+    struct Listener;
     using WeakSubscription = std::weak_ptr<Listener>;
 
     ///
     /// Listener will automatically unsubscribe from event if it is destroyed
     ///
-    struct Listener final : std::enable_shared_from_this<Listener>, Subscribable {
+    struct Listener final : std::enable_shared_from_this<Listener>, comm::Subscribable {
         using Identifier = typename std::list<WeakSubscription>::iterator;
 
-        Listener(IClientIPC &cl, std::list<WeakSubscription> &holder, size_t subId)
+        Listener(IClientIPC &cl, std::list<WeakSubscription> &holder, uint16_t subId)
             : m_process(cl)
             , m_holder(holder)
             , m_subscriptionId(subId)
         {
         }
 
-        ~Listener()
+        ~Listener() override
         {
             m_process.unsubscribeFromEventUpdates(m_subscriptionId);
             m_holder.erase(m_identifier);
@@ -37,22 +37,21 @@ public:
         IClientIPC &m_process;
         std::list<WeakSubscription> &m_holder;
         Identifier m_identifier;
-        size_t m_subscriptionId;
+        uint16_t m_subscriptionId;
 
-        friend class IEventClientIPC<Args...>;
+        friend class IEventClientIPC<EventId, Args...>;
     };
 
-    IEventClientIPC(IClientIPC &cl, const std::string &evName)
+    IEventClientIPC(IClientIPC &cl)
         : m_client(cl)
-        , m_evName(evName)
     {
     }
 
 public: /// IPCEvent implementation
-    Subscription subscribe(OnEventUpdateFn &&fn) override
+    comm::Subscription subscribe(OnEventUpdateFn &&fn) override
     {
         std::function<void(Args...)> f = std::forward<OnEventUpdateFn>(fn);
-        auto clientId = m_client.subscribeToEventUpdates<Args...>(m_evName, f);
+        auto clientId = m_client.subscribeToEventUpdates<Args...>(Interface::s_event_id, f);
 
         if (!clientId.has_value()) {
             return nullptr;
@@ -61,12 +60,11 @@ public: /// IPCEvent implementation
         auto listener = std::make_shared<Listener>(m_client, m_listeners, clientId.value());
         m_listeners.emplace_front(listener);
         listener->m_identifier = m_listeners.begin();
-        return std::dynamic_pointer_cast<Subscribable>(listener);
+        return std::dynamic_pointer_cast<comm::Subscribable>(listener);
     }
 
 private:
     IClientIPC &m_client;
-    const std::string m_evName;
     std::list<WeakSubscription> m_listeners;
 };
 

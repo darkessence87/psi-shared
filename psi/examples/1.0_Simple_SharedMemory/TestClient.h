@@ -2,6 +2,7 @@
 
 #include "ITest.h"
 #include "psi/shared/ipc/client/IClientIPC.hpp"
+#include "psi/shared/ipc/client/IEventClientIPC.h"
 #include "psi/thread/ILoop.h"
 
 namespace psi::examples {
@@ -11,6 +12,8 @@ class TestClient : public ITest, public ipc::client::IClientIPC
 public:
     TestClient(std::shared_ptr<thread::ILoop> loop = nullptr)
         : ipc::client::IClientIPC("TestService", loop)
+        , m_void_event(*this)
+        , m_complex_event(*this)
     {
     }
 
@@ -43,6 +46,20 @@ public:
     {
         return INVOKE_SERVER_FN_RETURN(std::string, uint16_t(6), arg0, arg1, arg2, arg3);
     }
+
+    VoidEv &voidEvent() override
+    {
+        return m_void_event;
+    }
+
+    ComplexEv &complexEvent() override
+    {
+        return m_complex_event;
+    }
+
+private:
+    ipc::client::IEventClientIPC<EV_VOID> m_void_event;
+    ipc::client::IEventClientIPC<EV_COMPLEX, double, bool, std::string, int32_t> m_complex_event;
 };
 
 } // namespace psi::examples

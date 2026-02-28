@@ -44,7 +44,7 @@ void IServerIPCBase::readMemory()
 
     auto obj = mem->read();
     uint32_t dataSz = 0;
-    uint8_t *data = obj->pop(dataSz);
+    const uint8_t *data = obj->pop(dataSz);
     if (!data || dataSz == 0) {
         mem->unlock();
         return;

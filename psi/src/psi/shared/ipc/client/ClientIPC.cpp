@@ -9,6 +9,12 @@ IClientIPC::IClientIPC(const std::string &name, std::shared_ptr<psi::thread::ILo
     , m_cbMemory(connectToService<CallbackSpace<>>(name))
     , m_evMemory(connectToService<EventSpace<>>(name))
 {
+    if (!m_evClientId.has_value()) {
+        m_evMemory->lock();
+        m_evClientId = m_evMemory->read()->registerClient();
+        m_evMemory->unlock();
+    }
+
     readConnectionData();
 }
 
@@ -23,20 +29,28 @@ IClientIPC::~IClientIPC()
     }
 }
 
-void IClientIPC::connect()
+bool IClientIPC::connect()
 {
     if (m_isActive) {
-        return;
+        return true;
     }
 
     m_callMemory->lock();
-    m_clientId = m_callMemory->read()->generateClientId();
+    auto clientId = m_callMemory->read()->generateClientId();
     m_callMemory->unlock();
+
+    if (!clientId.has_value()) {
+        return false;
+    }
+
+    m_clientId = clientId.value();
 
     m_isActive = true;
 
     readCbData();
     readEvData();
+
+    return true;
 }
 
 void IClientIPC::disconnect()
@@ -63,7 +77,7 @@ IClientIPC::IsServerAvailableAttribute::Interface &IClientIPC::isServerAvailable
     return m_isServerAvailableAttribute;
 }
 
-void IClientIPC::unsubscribeFromEventUpdates(size_t clientId)
+void IClientIPC::unsubscribeFromEventUpdates(uint16_t clientId)
 {
     m_evMemory->lock();
     m_evMemory->read()->unregisterClient(clientId);
@@ -141,7 +155,7 @@ void IClientIPC::readCbData()
 
             lock.unlock();
 
-            for (auto& cb : callbacks) {
+            for (auto &cb : callbacks) {
                 if (m_loop) {
                     m_loop->invoke([cb_ = std::move(cb)]() { cb_(); });
                 } else {
@@ -156,41 +170,60 @@ void IClientIPC::readEvData()
 {
     m_evDataThread = std::thread([this]() {
         while (m_isActive) {
-            std::unique_lock<std::mutex> lock(m_mtxEvData);
-            m_conditionEvData.wait_for(lock, std::chrono::microseconds(1), [this]() {
-                return !m_evDataListeners.empty() || !m_isActive;
-            });
+            {
+                std::unique_lock<std::mutex> lock(m_mtxEvData);
+                m_conditionEvData.wait_for(lock, std::chrono::microseconds(50), [this]() {
+                    return (!m_evDataListeners.empty() && m_evClientId.has_value()) || !m_isActive;
+                });
+            }
 
-            if (m_evDataListeners.empty()) {
+            if (!m_isActive || !m_evClientId.has_value()) {
                 continue;
             }
 
-            std::vector<std::function<void()>> events;
-            for (auto itr = m_evDataListeners.begin(); itr != m_evDataListeners.end();) {
-                const auto &evInfo = itr->get();
-                // process events
-                auto evObj = m_evMemory->read();
-                if (evObj->isDataAvailable(evInfo->m_evClientId.value(), evInfo->evIndex)) {
-                    m_evMemory->lock();
-                    evObj = m_evMemory->read();
+            std::vector<std::function<void()>> tasks;
+            for (;;) {
+                m_evMemory->lock();
+                auto event_view = m_evMemory->read()->pop(m_evClientId.value());
+                m_evMemory->unlock();
 
-                    size_t queueSz = 0;
-                    uint8_t *queue = evObj->pop(evInfo->m_evClientId.value(), evInfo->evIndex, queueSz);
-                    m_evMemory->unlock();
-
-                    events.emplace_back(std::bind(evInfo->ev, queue, queueSz));
+                if (!event_view) {
+                    break;
                 }
 
-                ++itr;
+                std::array<uint8_t, MAX_EVENT_SZ> local {};
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-libc-call"
+                std::memcpy(local.data(), event_view->data, event_view->sz);
+#pragma clang diagnostic pop
+
+                const uint16_t event_id = event_view->event_id;
+                const uint16_t sz = event_view->sz;
+
+                std::vector<EventInfo *> targets;
+                {
+                    std::lock_guard<std::mutex> lock(m_mtxEvData);
+                    for (auto &lsn : m_evDataListeners)
+                        if (lsn->event_id == event_id)
+                            targets.push_back(lsn.get());
+                }
+
+                if (targets.empty()) {
+                    continue;
+                }
+
+                tasks.emplace_back([targets, local, sz]() mutable {
+                    for (auto *lsn : targets) {
+                        lsn->event_fn(local.data(), sz);
+                    }
+                });
             }
 
-            lock.unlock();
-
-            for (auto ev : events) {
+            for (auto &t : tasks) {
                 if (m_loop) {
-                    m_loop->invoke([ev]() { ev(); });
+                    m_loop->invoke(std::move(t));
                 } else {
-                    ev();
+                    t();
                 }
             }
         }

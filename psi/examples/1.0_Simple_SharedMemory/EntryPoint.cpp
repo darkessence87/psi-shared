@@ -59,12 +59,12 @@ public:
 
 // -------------------------------------------------------------
 
-void startBenchmark(TestClient &client)
+void startBenchmark_callbacks(TestClient &client)
 {
     using namespace std::chrono;
     using namespace std::chrono_literals;
 
-    auto testFn = [&client]() {
+    auto testFn = [&]() {
         const int ITERATIONS = 10000;
         std::vector<size_t> stat;
         stat.resize(ITERATIONS);
@@ -95,6 +95,32 @@ void startBenchmark(TestClient &client)
     std::cout << "[callArgsCb], average ms: " << totalTime / 1'000'000.0 / stats.size() << std::endl;
 }
 
+void startBenchmark_events(TestClient &client, TestServer &server)
+{
+    using namespace std::chrono;
+    using namespace std::chrono_literals;
+
+    auto testFn = [&]() {
+        const int ITERATIONS = 100;
+        std::atomic<int> finishedTasks = 0;
+
+        auto client_complex_sub = client.complexEvent().subscribe([&finishedTasks](auto a, auto b, auto c, auto d) {
+            ++finishedTasks;
+            std::cout << "[" << finishedTasks << "] [complexEvent] received: [" << a << " " << b << " " << c << " " << d << "]" << std::endl;
+        });
+
+        for (auto i = 0; i < ITERATIONS; ++i) {
+            server.notify_ComplexEvent(10.13, true, "cool_msg", -7);
+        }
+
+        while (finishedTasks < ITERATIONS) {
+            std::this_thread::sleep_for(10ms);
+        }
+    };
+
+    testFn();
+}
+
 int main()
 {
     using namespace std::chrono;
@@ -108,10 +134,19 @@ int main()
         TestService server;
         server.run();
 
-        const auto &start = high_resolution_clock::now();
-        startBenchmark(client);
-        const auto &end = high_resolution_clock::now();
-        std::cout << "[total], ms: " << (end - start).count() / 1000000.0 << std::endl;
+        {
+            const auto &start = high_resolution_clock::now();
+            startBenchmark_callbacks(client);
+            const auto &end = high_resolution_clock::now();
+            std::cout << "[total], ms: " << (end - start).count() / 1000000.0 << std::endl;
+        }
+
+        {
+            const auto &start = high_resolution_clock::now();
+            startBenchmark_events(client, server);
+            const auto &end = high_resolution_clock::now();
+            std::cout << "[total], ms: " << (end - start).count() / 1000000.0 << std::endl;
+        }
     }
 
     std::cout << "main end" << std::endl;

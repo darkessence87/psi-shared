@@ -20,6 +20,8 @@ psi_config_target(${target_lib})
 set(TEST_SRC
     tests/CallSpace_Tests.cpp
     tests/CallbackSpace_Tests.cpp
+    tests/EventRingBuffer_Tests.cpp
+    tests/EventSpace_Tests.cpp
     tests/IPCCall_Tests.cpp
     tests/SerializeDeserialize_Tests.cpp
 )

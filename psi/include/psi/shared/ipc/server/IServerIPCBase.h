@@ -32,22 +32,14 @@ protected:
     void onCallback(std::optional<uint16_t> cbIndex, const uint8_t *cbData, uint16_t cbLen);
 
     template <typename... Args>
-    std::optional<size_t> registerEvent(const std::string &evName)
-    {
-        m_evMemory->getSharedMemory()->lock();
-        const auto id = m_evMemory->getSharedMemory()->read()->registerEvent(evName.c_str());
-        m_evMemory->getSharedMemory()->unlock();
-        return id;
-    }
-
-    template <typename... Args>
-    void notifyEvent(size_t evIndex, Args... args)
+    void notifyEvent(uint16_t event_id, Args... args)
     {
         uint8_t data[512] = {};
         const auto n = serializer::serializeType(data, args...);
-        m_evMemory->getSharedMemory()->lock();
-        m_evMemory->getSharedMemory()->read()->push(evIndex, data, n);
-        m_evMemory->getSharedMemory()->unlock();
+        auto mem = m_evMemory->getSharedMemory();
+        mem->lock();
+        mem->read()->push(event_id, data, n);
+        mem->unlock();
     }
 
 private:
@@ -119,7 +111,7 @@ private:
     EvMemoryPtr m_evMemory;
 
 private:
-    template <typename... Args>
+    template <uint16_t EventId, typename... Args>
     friend class IEventServerIPC;
 };
 

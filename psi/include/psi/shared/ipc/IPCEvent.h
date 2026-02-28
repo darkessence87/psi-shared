@@ -6,14 +6,16 @@
 
 namespace psi::ipc {
 
-template <typename... Args>
+template <uint16_t EventId, typename... Args>
 class IPCEvent
 {
 public:
     virtual ~IPCEvent() = default;
 
+    static constexpr uint16_t s_event_id = EventId;
+
     using OnEventUpdateFn = std::function<void(Args...)>;
-    virtual Subscription subscribe(OnEventUpdateFn &&) = 0;
+    virtual comm::Subscription subscribe(OnEventUpdateFn &&) = 0;
 };
 
 } // namespace psi::ipc

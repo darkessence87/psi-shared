@@ -2,6 +2,7 @@
 
 #include <array>
 #include <iostream>
+#include <optional>
 
 namespace psi::ipc {
 
@@ -35,16 +36,18 @@ public:
         return m_currentWriteIndex > 0;
     }
 
-    void push(uint8_t *data, const uint32_t sz)
+    bool push(uint8_t *data, const uint32_t sz) noexcept
     {
         if (!data || sz == 0) {
-            return;
+            return false;
         }
 
-        /// @todo Cyclic buffer should be used here
+        if (sz > MAX_DATA_LENGTH) {
+            return false;
+        }
+
         if (m_currentWriteIndex + sz > DATA_LENGTH) {
-            std::cout << "Override data, queue is full!" << std::endl;
-            m_currentWriteIndex = 0;
+            return false;
         }
 
 #pragma clang diagnostic push
@@ -52,32 +55,26 @@ public:
         std::memcpy(&m_data[m_currentWriteIndex], data, sz);
 #pragma clang diagnostic pop
         m_currentWriteIndex += sz;
+
+        return true;
     }
 
-    uint8_t *pop(uint32_t &dataSz)
+    const uint8_t *pop(uint32_t &dataSz) noexcept
     {
-        if (m_currentWriteIndex == 0) {
-            dataSz = 0;
-            return nullptr;
-        }
         dataSz = m_currentWriteIndex;
-        return &m_data[0];
+        return dataSz ? m_data.data() : nullptr;
     }
 
     void clear()
     {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-libc-call"
-        std::memset(m_data.data(), 0, m_currentWriteIndex);
-#pragma clang diagnostic pop
         m_currentWriteIndex = 0;
     }
 
-    uint16_t generateClientId()
+    std::optional<uint16_t> generateClientId()
     {
         if (m_lastClientId == std::numeric_limits<uint16_t>::max()) {
             std::cout << "Too many clients used" << std::endl;
-            return 0;
+            return std::nullopt;
         }
         return ++m_lastClientId;
     }

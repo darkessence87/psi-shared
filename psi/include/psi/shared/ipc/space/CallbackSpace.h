@@ -54,7 +54,7 @@ public:
         return m_cbData[cbIndex][STATUS_INDEX] == uint8_t(DataState::Ready);
     }
 
-    std::optional<uint16_t> pushCallback()
+    std::optional<uint16_t> pushCallback() noexcept
     {
         for (uint16_t i = 0; i < MAX_QUEUE_SIZE; ++i) {
             if (m_cbData[i][STATUS_INDEX] == uint8_t(DataState::NoData)) {
@@ -66,7 +66,7 @@ public:
         return std::nullopt;
     }
 
-    void updateCallback(uint16_t cbIndex, const uint8_t *data, const uint16_t sz)
+    void updateCallback(uint16_t cbIndex, const uint8_t *data, const uint16_t sz) noexcept
     {
         if (cbIndex >= MAX_QUEUE_SIZE || sz > MAX_DATA_LENGTH) {
             return;
@@ -87,7 +87,7 @@ public:
         cb[STATUS_INDEX] = uint8_t(DataState::Ready);
     }
 
-    std::optional<CallbackView> popCallback(uint16_t cbIndex)
+    std::optional<CallbackView> popCallback(uint16_t cbIndex) noexcept
     {
         if (cbIndex >= MAX_QUEUE_SIZE) {
             return std::nullopt;
@@ -110,7 +110,7 @@ public:
 #pragma clang diagnostic pop
     }
 
-    void clearCallback(uint16_t cbIndex)
+    void clearCallback(uint16_t cbIndex) noexcept
     {
         if (cbIndex >= MAX_QUEUE_SIZE) {
             return;

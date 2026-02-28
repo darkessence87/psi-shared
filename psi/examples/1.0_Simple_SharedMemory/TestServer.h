@@ -1,6 +1,8 @@
+
 #pragma once
 
 #include "ITest.h"
+#include "psi/shared/ipc/server/IEventServerIPC.h"
 #include "psi/shared/ipc/server/IServerIPC.h"
 #include "psi/thread/ILoop.h"
 
@@ -11,6 +13,8 @@ class TestServer : public ITest, public ipc::server::IServerIPC<TestServer>
 public:
     TestServer(std::shared_ptr<thread::ILoop> loop)
         : ipc::server::IServerIPC<TestServer>("TestService", loop)
+        , m_void_event(*this)
+        , m_complex_event(*this)
     {
     }
 
@@ -28,6 +32,8 @@ public:
             {uint16_t(4), &TestServer::callNoArgsComplexCb},
             {uint16_t(5), &TestServer::callArgsCb},
             {uint16_t(6), &TestServer::stringCallArgs},
+            // {uint16_t(7), &TestServer::voidEvent},
+            // {uint16_t(8), &TestServer::complexEvent},
         };
     }
 
@@ -61,6 +67,32 @@ public:
         /// NOT IMPLEMENTED
         return std::string();
     }
+
+    VoidEv &voidEvent() override
+    {
+        /// NOT IMPLEMENTED
+        return m_void_event;
+    }
+
+    ComplexEv &complexEvent() override
+    {
+        /// NOT IMPLEMENTED
+        return m_complex_event;
+    }
+
+    void notify_VoidEvent()
+    {
+        m_void_event.notify();
+    }
+
+    void notify_ComplexEvent(double a, bool b, std::string c, int32_t d)
+    {
+        m_complex_event.notify(a, b, c, d);
+    }
+
+protected:
+    ipc::server::IEventServerIPC<EV_VOID> m_void_event;
+    ipc::server::IEventServerIPC<EV_COMPLEX, double, bool, std::string, int32_t> m_complex_event;
 };
 
 } // namespace psi::examples
