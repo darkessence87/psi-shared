@@ -12,15 +12,15 @@ class ILoop;
 namespace ipc {
 
 template <typename T>
-class ServiceRunner
+class IPCServiceRunner
 {
 public:
-    ServiceRunner(std::shared_ptr<ILoop> loop)
+    IPCServiceRunner(std::shared_ptr<ILoop> loop)
         : m_loop(loop)
     {
     }
 
-    virtual ~ServiceRunner()
+    virtual ~IPCServiceRunner()
     {
         stop();
     }

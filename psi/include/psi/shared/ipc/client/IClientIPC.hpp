@@ -7,7 +7,10 @@
 
 #include "psi/comm/Attribute.h"
 #include "psi/comm/SafeCaller.h"
+#include "psi/shared/i_sm_managers.h"
 #include "psi/shared/ipc/IPCCall.h"
+#include "psi/shared/ipc/IPCCallback.h"
+#include "psi/shared/ipc/TemplateHelpers.h"
 #include "psi/shared/ipc/protocol/Deserializer.h"
 #include "psi/shared/ipc/protocol/Serializer.h"
 #include "psi/shared/ipc/space/CallSpace.h"
@@ -15,19 +18,12 @@
 #include "psi/shared/ipc/space/EventSpace.h"
 #include "psi/thread/ILoop.h"
 
-#include "TemplateHelpers.h"
 #include "Types.h"
-
-#include "psi/shared/i_sm_managers.h"
 
 namespace psi::ipc::client {
 
 template <typename C>
 using SharedMemoryPtr = std::shared_ptr<i_sm_object<C>>;
-
-#define INVOKE_SERVER_FN(methodId, ...) callServer(psi::ipc::client::CallStruct {methodId, __VA_ARGS__})
-#define INVOKE_SERVER_FN_RETURN(returnType, methodId, ...)                                                             \
-    callServer<returnType>(psi::ipc::client::CallStruct {methodId, __VA_ARGS__})
 
 class IClientIPC
 {
@@ -42,81 +38,78 @@ public:
 
     IsServerAvailableAttribute::Interface &isServerAvailableAttribute();
 
+    template <typename... A>
+    void INVOKE_SERVER_FN(uint16_t methodId, A &&...args)
+    {
+        callServer(CallStruct<std::decay_t<A>...>(methodId, std::forward<A>(args)...));
+    }
+
+    template <typename R, typename... A>
+    R INVOKE_SERVER_FN_RETURN(uint16_t methodId, A &&...args)
+    {
+        return callServerWithReturn<R>(CallStruct<std::decay_t<A>...>(methodId, std::forward<A>(args)...));
+    }
+
 protected:
     template <typename... A>
     void callServer(CallStruct<A...> args, int timeout = 10000)
     {
-        auto callArgs = std::apply(
-            [](auto &&...ts) {
-                return std::tuple_cat(([](auto &&v) {
-                    using T = std::decay_t<decltype(v)>;
-
-                    if constexpr (std::is_trivially_copyable_v<T> || std::is_same_v<T, std::string>) {
-                        return std::tuple<T>(std::forward<decltype(v)>(v));
-                    } else {
-                        return std::tuple<>();
-                    }
-                }(std::forward<decltype(ts)>(ts)))...);
-            },
-            args.args);
-        auto cbType = std::apply(
-            [](auto &&...ts) {
-                auto tt = std::tuple_cat(std::conditional_t<(!std::is_trivially_copyable_v<std::decay_t<decltype(ts)>>
-                                                             && !std::is_same_v<std::decay_t<decltype(ts)>, std::string>),
-                                                            std::tuple<std::decay_t<decltype(ts)>>,
-                                                            std::tuple<>> {}...);
-
-                if constexpr (std::tuple_size_v<decltype(tt)> != 0) {
-                    std::get<0>(tt) =
-                        std::get<sizeof...(ts) - 1>(std::forward_as_tuple(std::forward<decltype(ts)>(ts)...));
-                }
-
-                return std::move(tt);
-            },
-            args.args);
-
         static size_t callId = 0;
         ++callId;
 
+        using ArgsTuple = decltype(args.args);
+        constexpr size_t N = std::tuple_size_v<ArgsTuple>;
+
         // case 1: no args, no callback = empty call
-        if constexpr (std::tuple_size_v<decltype(callArgs)> == 0 && std::tuple_size_v<decltype(cbType)> == 0) {
+        if constexpr (N == 0) {
             pushCallWithNoArgs(args.methodId, callId, 0);
-        }
-        // case 2: args, no callback
-        else if constexpr (std::tuple_size_v<decltype(cbType)> == 0) {
-            pushCallWithArgs(callArgs, args.methodId, callId, 0);
-        }
-        // case 3: no args, callback
-        else if constexpr (std::tuple_size_v<decltype(callArgs)> == 0) {
-            auto cbIndex = pushCb(args.methodId, callId, std::get<0>(cbType), timeout);
-            if (!cbIndex.has_value()) {
-                std::cout << "Not enough space for callback processing, callId: " << callId << std::endl;
-                return;
+        } else {
+            using Last = std::tuple_element_t<N - 1, ArgsTuple>;
+            constexpr bool has_cb = is_ipc_callback_v<Last>;
+
+            // case 2: args, no callback
+            if constexpr (!has_cb) {
+                pushCallWithArgs(args.args, args.methodId, callId, 0);
+            } else {
+                using CallbackT = std::decay_t<std::tuple_element_t<N - 1, ArgsTuple>>;
+                CallbackT cb = std::get<N - 1>(args.args);
+                auto cbIndex = pushCb(args.methodId, callId, std::move(cb), timeout);
+                if (!cbIndex.has_value()) {
+                    std::cout << "Not enough space for callback processing, callId: " << callId << std::endl;
+                    return;
+                }
+
+                // case 3: no args, callback
+                if constexpr (N == 1) {
+                    pushCallWithNoArgs(args.methodId, callId, cbIndex.value());
+                } else {
+                    // case 4: args, callback
+                    auto argsWithoutCb = tuple_pop_back(args.args);
+                    pushCallWithArgs(argsWithoutCb, args.methodId, callId, cbIndex.value());
+                }
             }
-            pushCallWithNoArgs(args.methodId, callId, cbIndex.value());
-        }
-        // case 4: args, callback
-        else {
-            auto cbIndex = pushCb(args.methodId, callId, std::get<0>(cbType), timeout);
-            if (!cbIndex.has_value()) {
-                std::cout << "Not enough space for callback processing, callId: " << callId << std::endl;
-                return;
-            }
-            pushCallWithArgs(callArgs, args.methodId, callId, cbIndex.value());
         }
     }
 
     template <typename R, typename... A>
-    R callServer(CallStruct<A...> args)
+    R callServerWithReturn(CallStruct<A...> args)
     {
-        std::promise<R> p;
-        std::future<R> r = p.get_future();
-        auto resultCb = [&p](R result) { p.set_value(result); };
+        auto promise = std::make_shared<std::promise<R>>();
+        auto future = promise->get_future();
 
-        using ReturnFn = std::function<void(R)>;
-        callServer(CallStruct<A..., ReturnFn>(args.methodId, std::tuple_cat(args.args, std::tuple<ReturnFn>(resultCb))));
+        auto resultCb = [promise](uint16_t error_code, std::string error_msg, R result) {
+            if (error_code != 0) {
+                promise->set_exception(std::make_exception_ptr(std::runtime_error(std::move(error_msg))));
+                return;
+            }
+            promise->set_value(std::move(result));
+        };
 
-        return r.get();
+        using ReturnFn = ipc::IPCCallback<R>;
+        auto fullArgs = std::tuple_cat(std::move(args.args), std::make_tuple(ReturnFn(std::move(resultCb))));
+        callServer(CallStruct<A..., ReturnFn>(args.methodId, std::move(fullArgs)));
+
+        return future.get();
     }
 
     template <typename... Args>
@@ -141,7 +134,7 @@ protected:
                 auto argsTuple = exportFunctionArgTypes(onNotify);
 
                 size_t offset = 0;
-                fnPerTuple<0u>(
+                fnPerTuple(
                     [&](auto &arg) -> int {
                         deserializer::deserializeTuple(arg, data, offset);
                         return 1;
@@ -201,7 +194,7 @@ private:
         IPCCall callInfo {callId, methodId, m_clientId, cbIndex, 0u};
         const auto n = callInfo.serialize(serializedCall);
         m_callMemory->lock();
-        m_callMemory->read()->push(serializedCall, 2 + n);
+        m_callMemory->read()->push(serializedCall, n);
         m_callMemory->unlock();
     }
 
@@ -209,7 +202,7 @@ private:
     void pushCallWithArgs(const std::tuple<A...> &call_args, uint16_t method_id, size_t call_id, uint16_t cb_index)
     {
         uint16_t args_sz = 0;
-        fnPerTuple<0u>(
+        fnPerTuple(
             [&](const auto &arg) -> int {
                 args_sz += serializer::sizeOfArgs(arg);
                 return 1;
@@ -217,13 +210,16 @@ private:
             call_args);
 
         if (args_sz > MAX_CALL_SZ - IPCCall::HEAD_SZ) {
-            std::cerr << "Could not process"
-                      << " methodId: " << method_id << ", clientId: " << m_clientId << ", callId: " << call_id
-                      << " as call arguments are too big (" << args_sz << ")!" << std::endl;
+            fprintf(stderr,
+                    "Could not process methodId: %u, clientId: %u, callId: %zu as call arguments are too big (%u)!\n",
+                    method_id,
+                    m_clientId,
+                    call_id,
+                    args_sz);
             return;
         }
 
-        uint8_t serialized_call[MAX_CALL_SZ] = {'\0'};
+        uint8_t serialized_call[MAX_CALL_SZ] = {};
 
         IPCCall call_info {call_id, method_id, m_clientId, cb_index};
         uint32_t serialized_sz = call_info.serialize_with_args(serialized_call, call_args);
@@ -233,9 +229,12 @@ private:
         m_callMemory->unlock();
     }
 
-    template <typename CbType>
-    std::optional<uint16_t> pushCb(uint16_t methodId, size_t callId, CbType cb, int timeout)
+    template <typename CallbackT, typename = std::enable_if_t<is_ipc_callback_v<std::decay_t<CallbackT>>>>
+    std::optional<uint16_t> pushCb(uint16_t methodId, size_t callId, CallbackT &&cb, int timeout)
+        requires is_ipc_callback_v<std::decay_t<CallbackT>>
     {
+        using CallbackType = std::decay_t<CallbackT>;
+
         m_cbMemory->lock();
         const auto cbIndex = m_cbMemory->read()->pushCallback();
         m_cbMemory->unlock();
@@ -247,29 +246,28 @@ private:
         CallbackInfo cbInfo;
         cbInfo.timeout = std::chrono::high_resolution_clock().now() + std::chrono::milliseconds(timeout);
         cbInfo.cbIndex = cbIndex.value();
-        cbInfo.fn = [=, this](uint8_t *data) {
-            auto fnArgTypes = exportFunctionArgTypes(cb);
+        cbInfo.fn = [this, methodId, callId, cb_ = std::move(cb), cbIndex_ = cbIndex.value()](uint8_t *data) {
             if (data == nullptr) {
                 std::cerr << "methodId: " << methodId << ", clientId: " << m_clientId << ", callId: " << callId
                           << " callback timeout!" << std::endl;
                 m_cbMemory->lock();
-                m_cbMemory->read()->clearCallback(cbInfo.cbIndex);
+                m_cbMemory->read()->clearCallback(cbIndex_);
                 m_cbMemory->unlock();
-                std::apply(cb, fnArgTypes);
-            } else {
-                if constexpr (std::tuple_size_v<decltype(fnArgTypes)> == 0) {
-                    cb();
-                } else {
-                    size_t offset = 0;
-                    fnPerTuple<0u>(
-                        [&](auto &arg) -> int {
-                            deserializer::deserializeTuple(arg, data, offset);
-                            return 1;
-                        },
-                        fnArgTypes);
-                    std::apply(cb, fnArgTypes);
-                }
+                cb_.fail(IPCError::Timeout);
+                return;
             }
+
+            uint16_t error_code = 0;
+            std::string error_msg;
+            typename CallbackType::ArgsTuple args;
+            CallbackType::deserialize(data, error_code, error_msg, args);
+
+            if (error_code != IPCError::None) {
+                cb_.fail(error_code, error_msg);
+                return;
+            }
+
+            std::apply([&](auto &&...args_) { cb_.success(args_...); }, args);
         };
 
         std::unique_lock<std::mutex> lock(m_mtxCbData);

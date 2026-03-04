@@ -64,10 +64,9 @@ private:
             mgr = i_sm_managers::create_EventSpace(name);
         }
 
-        auto mem = get_sm_object<C>(mgr);
-
         if (mgr->isShared()) {
             mgr->loadFromShared();
+            auto mem = get_sm_object<C>(mgr);
             mem->lock();
             mem->read()->setAvailable(true);
             mem->unlock();

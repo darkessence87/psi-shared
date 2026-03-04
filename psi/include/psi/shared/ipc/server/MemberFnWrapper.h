@@ -4,26 +4,11 @@
 #include <functional>
 #include <type_traits>
 
+#include "psi/shared/ipc/TemplateHelpers.h"
 #include "psi/shared/ipc/protocol/Deserializer.h"
 #include "psi/shared/ipc/protocol/Serializer.h"
 
 namespace psi::ipc {
-
-template <typename F, typename... T, size_t... Index>
-constexpr auto fnPerTupleImpl(F &&fn, std::tuple<T...> &t, std::index_sequence<Index...>)
-{
-#ifdef __linux__
-    __attribute__((__unused__)) auto x = {fn(std::get<Index>(t))...};
-#else
-    [[maybe_unused]] auto x = {fn(std::get<Index>(t))...};
-#endif
-}
-
-template <int Trim, typename... T, typename F>
-constexpr auto fnPerTuple(F &&fn, std::tuple<T...> &t)
-{
-    return fnPerTupleImpl(fn, t, std::make_index_sequence<sizeof...(T) - Trim>());
-}
 
 template <typename T>
 struct MemberFnWrapper {
@@ -33,71 +18,66 @@ struct MemberFnWrapper {
     template <typename... A>
     MemberFnWrapper(void (T::*memberFn)(A...))
     {
-        auto callArgs = std::apply(
-            [](auto... ts) {
-                return std::tuple_cat(std::conditional_t<(std::is_trivially_copyable<decltype(ts)>::value
-                                                          || std::is_same<std::string, decltype(ts)>::value),
-                                                         std::tuple<decltype(ts)>,
-                                                         std::tuple<>> {}...);
-            },
-            std::tuple<A...>());
-        auto cbType = std::apply(
-            [](auto... ts) {
-                return std::tuple_cat(std::conditional_t<(!std::is_trivially_copyable<decltype(ts)>::value
-                                                          && !std::is_same<std::string, decltype(ts)>::value),
-                                                         std::tuple<decltype(ts)>,
-                                                         std::tuple<>> {}...);
-            },
-            std::tuple<A...>());
+        using ArgsTuple = std::tuple<A...>;
+        constexpr size_t N = sizeof...(A);
 
         // case 1: no args, no callback = empty call
-        if constexpr (std::tuple_size_v<decltype(callArgs)> == 0 && std::tuple_size_v<decltype(cbType)> == 0) {
-            m_any = Func([=](T &caller, auto...) mutable { std::apply(memberFn, std::tuple<T &>(caller)); });
-        }
-        // case 2: args, no callback
-        else if constexpr (std::tuple_size_v<decltype(cbType)> == 0) {
-            m_any = Func([=](T &caller, const uint8_t *args, auto...) mutable {
-                size_t offset = 0;
-                fnPerTuple<0u>(
-                    [&](auto &result) -> int {
-                        deserializer::deserializeTuple(result, args, offset);
-                        return 1;
-                    },
-                    callArgs);
-                auto params = std::tuple_cat(std::tuple<T &>(caller), callArgs);
-                std::apply(memberFn, params);
-            });
-        }
-        // case 3: no args, callback
-        else if constexpr (std::tuple_size_v<decltype(callArgs)> == 0) {
-            m_any = Func([=](T &caller, auto, auto cb) mutable {
-                std::get<0>(cbType) = [cb](auto... args) {
-                    uint8_t data[512] = {};
-                    const auto n = serializer::serializeType(data, args...);
-                    cb(data, n);
-                };
-                auto params = std::tuple_cat(std::tuple<T &>(caller), cbType);
-                std::apply(memberFn, params);
-            });
-        }
-        // case 4: args, callback
-        else {
-            m_any = Func([=](T &caller, const uint8_t *args, auto cb) mutable {
-                size_t offset = 0;
-                fnPerTuple<0u>(
-                    [&](auto &result) -> int {
-                        deserializer::deserializeTuple(result, args, offset);
-                        return 1;
-                    },
-                    callArgs);
-                std::get<0>(cbType) = [cb](auto... args_) {
-                    uint8_t data[512] = {};
-                    const auto n = serializer::serializeType(data, args_...);
-                    cb(data, n);
-                };
-                auto params = std::tuple_cat(std::tuple<T &>(caller), callArgs, cbType);
-                std::apply(memberFn, params);
-            });
+        if constexpr (N == 0) {
+            m_any = Func([=](T &caller, auto...) mutable { (caller.*memberFn)(); });
+        } else {
+            using Last = std::tuple_element_t<N - 1, ArgsTuple>;
+            constexpr bool has_cb = is_ipc_callback_v<Last>;
+
+            if constexpr (!has_cb) {
+                // case 2: args, no callback
+                m_any = Func([=](T &caller, const uint8_t *args, auto...) mutable {
+                    ArgsTuple params;
+                    size_t offset = 0;
+
+                    fnPerTuple(
+                        [&](auto &arg) -> int {
+                            deserializer::deserializeTuple(arg, args, offset);
+                            return 1;
+                        },
+                        params);
+
+                    std::apply([&](auto &&...unpacked) { (caller.*memberFn)(unpacked...); }, params);
+                });
+            } else {
+                // case 3: no args, callback
+                if constexpr (N == 1) {
+                    m_any = Func([=](T &caller, auto, auto cb) mutable {
+                        using CallbackT = std::decay_t<Last>;
+                        CallbackT fn {[cb](uint16_t error_code, const std::string &error_msg, auto... args_) {
+                            uint8_t data[512] = {};
+                            const auto n = CallbackT::serialize(data, error_code, error_msg, args_...);
+                            cb(data, n);
+                        }};
+                        (caller.*memberFn)(fn);
+                    });
+                } else {
+                    // case 4: args, callback
+                    m_any = Func([=](T &caller, const uint8_t *args, auto cb) mutable {
+                        using ArgTupleNoCb = decltype(tuple_pop_back(std::declval<ArgsTuple>()));
+                        ArgTupleNoCb params;
+                        size_t offset = 0;
+
+                        fnPerTuple(
+                            [&](auto &arg) -> int {
+                                deserializer::deserializeTuple(arg, args, offset);
+                                return 1;
+                            },
+                            params);
+                        using CallbackT = std::decay_t<Last>;
+                        CallbackT fn {[cb](uint16_t error_code, const std::string &error_msg, auto... args_) {
+                            uint8_t data[512] = {};
+                            const auto n = CallbackT::serialize(data, error_code, error_msg, args_...);
+                            cb(data, n);
+                        }};
+                        std::apply([&](auto &&...unpacked) { (caller.*memberFn)(unpacked..., fn); }, params);
+                    });
+                }
+            }
         }
     }
 
@@ -134,7 +114,7 @@ struct MemberFnWrapper {
         else if constexpr (std::tuple_size_v<decltype(cbType)> == 0) {
             m_any = Func([=](T &caller, const uint8_t *args, auto cb) mutable {
                 size_t offset = 0;
-                fnPerTuple<0u>(
+                fnPerTuple(
                     [&](auto &result) -> int {
                         deserializer::deserializeTuple(result, args, offset);
                         return 1;

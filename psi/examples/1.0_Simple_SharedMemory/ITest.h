@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <string>
 
+#include "psi/shared/ipc/IPCCallback.h"
 #include "psi/shared/ipc/IPCEvent.h"
 
 namespace psi::examples {
@@ -14,8 +15,8 @@ class ITest
 public:
     virtual ~ITest() = default;
 
-    using VoidCb = std::function<void()>;
-    using ComplexCb = std::function<void(double, bool, std::string, int32_t)>;
+    using VoidCb = ipc::IPCCallback<>;
+    using ComplexCb = ipc::IPCCallback<double, bool, std::string, int32_t>;
     virtual void callNoArgsNoCb() = 0;
     virtual void callArgsNoCb(double, bool, std::string, int8_t) = 0;
     virtual void callNoArgsVoidCb(VoidCb) = 0;

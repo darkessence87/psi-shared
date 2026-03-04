@@ -38,17 +38,17 @@ public:
     void callNoArgsVoidCb(VoidCb cb)
     {
         LOG_INFO("server: [callNoArgsVoidCb]");
-        cb();
+        cb.success();
     }
     void callNoArgsComplexCb(ComplexCb cb)
     {
         LOG_INFO("server: [callNoArgsComplexCb]");
-        cb(15.7, true, "callNoArgsComplexCb", -10);
+        cb.success(15.7, true, "callNoArgsComplexCb", -10);
     }
     void callArgsCb(long double ld, bool b, std::string s, uint64_t u, ComplexCb cb)
     {
         LOG_INFO("server: [callArgsCb] ld: " << ld << ", b: " << b << ", s: " << s << ", u: " << std::to_string(u));
-        cb(7.15, true, "callArgsCb", -7);
+        cb.success(7.15, true, "callArgsCb", -7);
     }
     std::string stringCallArgs(long double ld, bool b, std::string s, uint16_t u)
     {
@@ -72,11 +72,15 @@ void startBenchmark_callbacks(TestClient &client)
 
         for (auto i = 0; i < ITERATIONS; ++i) {
             const auto &start = high_resolution_clock::now();
-            client.callArgsCb(54321.12345, true, "test", i, [start, &stat, &finishedTasks, i](double, bool, std::string, int32_t) {
-                const auto &end = high_resolution_clock::now();
-                stat[i] = (end - start).count();
-                ++finishedTasks;
-            });
+            client.callArgsCb(54321.12345,
+                              true,
+                              "test",
+                              i,
+                              [start, &stat, &finishedTasks, i](uint16_t, std::string, double, bool, std::string, int32_t) {
+                                  const auto &end = high_resolution_clock::now();
+                                  stat[i] = (end - start).count();
+                                  ++finishedTasks;
+                              });
         }
 
         while (finishedTasks < ITERATIONS) {
@@ -106,7 +110,8 @@ void startBenchmark_events(TestClient &client, TestServer &server)
 
         auto client_complex_sub = client.complexEvent().subscribe([&finishedTasks](auto a, auto b, auto c, auto d) {
             ++finishedTasks;
-            std::cout << "[" << finishedTasks << "] [complexEvent] received: [" << a << " " << b << " " << c << " " << d << "]" << std::endl;
+            std::cout << "[" << finishedTasks << "] [complexEvent] received: [" << a << " " << b << " " << c << " " << d
+                      << "]" << std::endl;
         });
 
         for (auto i = 0; i < ITERATIONS; ++i) {

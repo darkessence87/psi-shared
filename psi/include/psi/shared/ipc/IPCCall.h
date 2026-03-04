@@ -1,9 +1,9 @@
 
 #pragma once
 
-#include "client/TemplateHelpers.h"
 #include "protocol/Serializable.h"
 #include "protocol/Serializer.h"
+#include "psi/shared/ipc/TemplateHelpers.h"
 
 namespace psi::ipc {
 
@@ -36,7 +36,7 @@ struct IPCCall {
         offset += serializable::write(buffer + offset, m_client_id);
         offset += serializable::write(buffer + offset, m_cb_index);
         uint64_t args_sz = 0;
-        fnPerTuple<0u>(
+        fnPerTuple(
             [&](const auto &arg) -> int {
                 serializer::serializeTuple(buffer + offset + sizeof(decltype(m_args_sz)), arg, args_sz);
                 return 1;

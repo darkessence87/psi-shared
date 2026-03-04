@@ -44,7 +44,7 @@ public:
 
     std::string stringCallArgs(long double arg0, bool arg1, std::string arg2, uint16_t arg3) override
     {
-        return INVOKE_SERVER_FN_RETURN(std::string, uint16_t(6), arg0, arg1, arg2, arg3);
+        return INVOKE_SERVER_FN_RETURN<std::string>(uint16_t(6), arg0, arg1, arg2, arg3);
     }
 
     VoidEv &voidEvent() override

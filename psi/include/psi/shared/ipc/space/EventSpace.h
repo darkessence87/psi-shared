@@ -13,8 +13,6 @@ namespace psi::ipc {
 template <uint16_t MAX_CLIENTS_SIZE = 16u>
 class EventSpace final
 {
-    static constexpr uint16_t EVENT_MAX_ID = 64u;
-
     static constexpr uint16_t MAX_QUEUE_SIZE = 128u;
     static constexpr uint16_t MAX_DATA_LENGTH = 256u;
     using EventData = std::array<EventRingBuffer<MAX_QUEUE_SIZE, MAX_DATA_LENGTH>, MAX_CLIENTS_SIZE>;
@@ -66,10 +64,6 @@ public:
     bool push(uint16_t event_id, const uint8_t *data, uint16_t sz) noexcept
     {
         if (!m_isAvailable) {
-            return false;
-        }
-
-        if (event_id >= EVENT_MAX_ID) {
             return false;
         }
 

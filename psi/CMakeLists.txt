@@ -27,5 +27,7 @@ set(TEST_SRC
 )
 psi_make_tests("Shared" "${TEST_SRC}" "${target_lib}")
 
-set(EXAMPLE_SRC_1.0 examples/1.0_Simple_SharedMemory/EntryPoint.cpp)
+set(EXAMPLE_SRC_1.0
+    examples/1.0_Simple_SharedMemory/EntryPoint.cpp
+)
 psi_make_examples("1.0_Simple_SharedMemory" "${EXAMPLE_SRC_1.0}" "${target_lib}")
