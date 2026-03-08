@@ -1,16 +1,18 @@
 #pragma once
 
-#include <stdint.h>
-#include <string>
+#include "Common.h"
 
 namespace psi::ipc::serializer {
 
 template <typename T>
-inline uint16_t serializeType(uint8_t *buffer, const T &arg)
+inline SIZE_TYPE serializeType(uint8_t *buffer, const T &arg);
+
+template <TrivialConcept T>
+inline SIZE_TYPE serializeType(uint8_t *buffer, const T &arg)
 {
     static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
 
-    const uint16_t sz = sizeof(T);
+    const SIZE_TYPE sz = sizeof(T);
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-libc-call"
     std::memcpy(buffer, &arg, sz);
@@ -19,9 +21,9 @@ inline uint16_t serializeType(uint8_t *buffer, const T &arg)
 }
 
 template <typename T, typename... Args>
-inline uint16_t serializeType(uint8_t *buffer, const T &arg, Args &&...args)
+inline SIZE_TYPE serializeType(uint8_t *buffer, const T &arg, Args &&...args)
 {
-    uint16_t sz = serializeType<T>(buffer, arg);
+    SIZE_TYPE sz = serializeType<T>(buffer, arg);
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
     sz += serializeType(buffer + sz, std::forward<Args>(args)...);
@@ -29,16 +31,16 @@ inline uint16_t serializeType(uint8_t *buffer, const T &arg, Args &&...args)
     return sz;
 }
 
-inline uint16_t serializeType(uint8_t *)
+inline SIZE_TYPE serializeType(uint8_t *)
 {
     return 0;
 }
 
 template <>
-inline uint16_t serializeType<std::string>(uint8_t *buffer, const std::string &str)
+inline SIZE_TYPE serializeType<std::string>(uint8_t *buffer, const std::string &str)
 {
-    const uint16_t len = static_cast<uint16_t>(str.size());
-    const uint16_t sz = serializeType(buffer, uint64_t(len));
+    const auto len = static_cast<SIZE_TYPE>(str.size());
+    const SIZE_TYPE sz = serializeType(buffer, STRING_HEADER_TYPE(len));
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-libc-call"
 #pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
@@ -47,33 +49,49 @@ inline uint16_t serializeType<std::string>(uint8_t *buffer, const std::string &s
     return sz + len;
 }
 
+template <VectorConcept C>
+inline SIZE_TYPE serializeType(uint8_t *buffer, const C &data)
+{
+    SIZE_TYPE offset = 0;
+    const SIZE_TYPE sz = serializeType(buffer, VECTOR_HEADER_TYPE(data.size()));
+    offset += sz;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-libc-call"
+#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+    for (const auto& data_element : data) {
+        offset += serializeType(buffer + offset, data_element);
+    }
+#pragma clang diagnostic pop
+    return offset;
+}
+
 template <typename T>
-inline uint16_t sizeOfArgs(const T &)
+inline SIZE_TYPE sizeOfArgs(const T &)
 {
     return sizeof(T);
 }
 
 template <typename T, typename... Args>
-inline uint16_t sizeOfArgs(const T &arg, Args &&...args)
+inline SIZE_TYPE sizeOfArgs(const T &arg, Args &&...args)
 {
-    uint16_t r = sizeOfArgs<T>(arg);
+    SIZE_TYPE r = sizeOfArgs<T>(arg);
     r += sizeOfArgs(std::forward<Args>(args)...);
     return r;
 }
 
 template <>
-inline uint16_t sizeOfArgs<std::string>(const std::string &arg)
+inline SIZE_TYPE sizeOfArgs<std::string>(const std::string &arg)
 {
-    return sizeof(uint64_t) + static_cast<uint16_t>(arg.size());
+    return STRING_HEADER_SIZE + static_cast<SIZE_TYPE>(arg.size());
 }
 
-inline uint16_t sizeOfArgs(const std::string &arg)
+inline SIZE_TYPE sizeOfArgs(const std::string &arg)
 {
-    return sizeof(uint64_t) + static_cast<uint16_t>(arg.size());
+    return STRING_HEADER_SIZE + static_cast<SIZE_TYPE>(arg.size());
 }
 
 template <typename R>
-inline void serializeTuple(uint8_t *buffer, const R &data, uint64_t &sz)
+inline void serializeTuple(uint8_t *buffer, const R &data, SIZE_TYPE &sz)
 {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
@@ -82,7 +100,7 @@ inline void serializeTuple(uint8_t *buffer, const R &data, uint64_t &sz)
 }
 
 template <>
-inline void serializeTuple<std::string>(uint8_t *buffer, const std::string &data, uint64_t &sz)
+inline void serializeTuple<std::string>(uint8_t *buffer, const std::string &data, SIZE_TYPE &sz)
 {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunsafe-buffer-usage"

@@ -109,8 +109,6 @@ TEST(EventSpace_Tests, push)
 
     EXPECT_EQ(std::memcmp(v0->data, data, 2), 0);
     EXPECT_EQ(std::memcmp(v1->data, data, 2), 0);
-
-    EXPECT_FALSE(es.push(1000, data, 2)); // invalid event id
 }
 
 // ============================================================

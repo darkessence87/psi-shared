@@ -32,7 +32,7 @@ struct MemberFnWrapper {
                 // case 2: args, no callback
                 m_any = Func([=](T &caller, const uint8_t *args, auto...) mutable {
                     ArgsTuple params;
-                    size_t offset = 0;
+                    uint16_t offset = 0;
 
                     fnPerTuple(
                         [&](auto &arg) -> int {
@@ -60,7 +60,7 @@ struct MemberFnWrapper {
                     m_any = Func([=](T &caller, const uint8_t *args, auto cb) mutable {
                         using ArgTupleNoCb = decltype(tuple_pop_back(std::declval<ArgsTuple>()));
                         ArgTupleNoCb params;
-                        size_t offset = 0;
+                        uint16_t offset = 0;
 
                         fnPerTuple(
                             [&](auto &arg) -> int {
@@ -105,15 +105,20 @@ struct MemberFnWrapper {
         if constexpr (std::tuple_size_v<decltype(callArgs)> == 0 && std::tuple_size_v<decltype(cbType)> == 0) {
             m_any = Func([=](T &caller, auto, auto cb) mutable {
                 R r = std::apply(memberFn, std::tuple<T &>(caller));
-                uint8_t data[512] = {};
-                const auto n = serializer::serializeType(data, r);
-                cb(data, n);
+
+                using CallbackT = IPCCallback<R>;
+                CallbackT fn {[cb](uint16_t error_code, const std::string &error_msg, auto... args_) {
+                    uint8_t data[512] = {};
+                    const auto n = CallbackT::serialize(data, error_code, error_msg, args_...);
+                    cb(data, n);
+                }};
+                fn.success(r);
             });
         }
         // case 2: args
         else if constexpr (std::tuple_size_v<decltype(cbType)> == 0) {
             m_any = Func([=](T &caller, const uint8_t *args, auto cb) mutable {
-                size_t offset = 0;
+                uint16_t offset = 0;
                 fnPerTuple(
                     [&](auto &result) -> int {
                         deserializer::deserializeTuple(result, args, offset);
@@ -122,9 +127,14 @@ struct MemberFnWrapper {
                     callArgs);
                 auto params = std::tuple_cat(std::tuple<T &>(caller), callArgs);
                 R r = std::apply(memberFn, params);
-                uint8_t data[512] = {};
-                const auto n = serializer::serializeType(data, r);
-                cb(data, n);
+
+                using CallbackT = IPCCallback<R>;
+                CallbackT fn {[cb](uint16_t error_code, const std::string &error_msg, auto... args_) {
+                    uint8_t data[512] = {};
+                    const auto n = CallbackT::serialize(data, error_code, error_msg, args_...);
+                    cb(data, n);
+                }};
+                fn.success(r);
             });
         }
     }

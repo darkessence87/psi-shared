@@ -32,7 +32,7 @@ public:
         }
     }
 
-    void fail(uint16_t error_code, const std::string &error_msg = "") const
+    void fail(uint16_t error_code, const std::string &error_msg = std::string {}) const
     {
         if (m_cb) {
             m_cb(error_code, error_msg, Args {}...);
@@ -56,7 +56,7 @@ public:
         uint16_t payload_sz = 0;
         uint16_t payload_offset = offset + sizeof(uint16_t);
         if constexpr (sizeof...(Args) > 0) {
-            uint64_t inner_sz = 0;
+            uint16_t inner_sz = 0;
             fnPerTuple(
                 [&](const auto &arg) -> int {
                     serializer::serializeTuple(buffer + payload_offset, arg, inner_sz);
@@ -75,24 +75,18 @@ public:
     {
         uint16_t offset = 0;
 
-        std::memcpy(&error_code, data + offset, sizeof(uint16_t));
-        offset += sizeof(uint16_t);
-
+        error_code = deserializer::deserializeType<uint16_t>(data, offset);
         if (error_code != IPCError::None) {
             error_msg = deserializer::deserializeType<std::string>(data, offset);
-            offset += sizeof(uint64_t) + error_msg.size();
             return;
         }
 
-        uint16_t payload_sz;
-        std::memcpy(&payload_sz, data + offset, sizeof(uint16_t));
-        offset += sizeof(uint16_t);
-
+        uint16_t payload_sz = deserializer::deserializeType<uint16_t>(data, offset);
         if constexpr (sizeof...(Args) == 0) {
             return;
         }
 
-        size_t innerOffset = 0;
+        uint16_t innerOffset = 0;
         fnPerTuple(
             [&](auto &arg) -> int {
                 deserializer::deserializeTuple(arg, data + offset, innerOffset);

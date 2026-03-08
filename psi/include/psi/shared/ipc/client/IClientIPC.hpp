@@ -133,7 +133,7 @@ protected:
             } else {
                 auto argsTuple = exportFunctionArgTypes(onNotify);
 
-                size_t offset = 0;
+                uint16_t offset = 0;
                 fnPerTuple(
                     [&](auto &arg) -> int {
                         deserializer::deserializeTuple(arg, data, offset);
