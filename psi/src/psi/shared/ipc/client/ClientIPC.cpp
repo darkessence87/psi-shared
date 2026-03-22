@@ -2,22 +2,6 @@
 
 namespace psi::ipc::client {
 
-IClientIPC::IClientIPC(const std::string &name, std::shared_ptr<psi::thread::ILoop> loop)
-    : m_loop(loop)
-    , m_guard(this)
-    , m_callMemory(connectToService<CallSpace<>>(name))
-    , m_cbMemory(connectToService<CallbackSpace<>>(name))
-    , m_evMemory(connectToService<EventSpace<>>(name))
-{
-    if (!m_evClientId.has_value()) {
-        m_evMemory->lock();
-        m_evClientId = m_evMemory->read()->registerClient();
-        m_evMemory->unlock();
-    }
-
-    readConnectionData();
-}
-
 IClientIPC::~IClientIPC()
 {
     disconnect();

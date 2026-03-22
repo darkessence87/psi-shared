@@ -2,6 +2,8 @@
 
 #include "Common.h"
 
+#include <string>
+
 namespace psi::ipc::serializer {
 
 template <typename T>

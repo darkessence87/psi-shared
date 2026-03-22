@@ -86,4 +86,11 @@ private:
     uint16_t m_lastClientId = 0;
 };
 
+using CallSpace_Default = CallSpace<>;
+using CallSpace_Q_1024_D_1024 = CallSpace<1024, 1024>;
+using CallSpace_Q_1024_D_2048 = CallSpace<1024, 2048>;
+using CallSpace_Q_2048_D_512 = CallSpace<2048, 512>;
+using CallSpace_Q_2048_D_1024 = CallSpace<2048, 1024>;
+using CallSpace_Q_2048_D_2048 = CallSpace<2048, 2048>;
+
 } // namespace psi::ipc

@@ -7,12 +7,43 @@
 
 namespace psi {
 
-template class sm_object_impl<ipc::CallSpace<>>;
-template class sm_object_impl<ipc::CallbackSpace<>>;
-template class sm_object_impl<ipc::EventSpace<>>;
+// CallSpace
+template class sm_object_impl<ipc::CallSpace_Default>;
+template class sm_object_impl<ipc::CallSpace_Q_1024_D_1024>;
+template class sm_object_impl<ipc::CallSpace_Q_1024_D_2048>;
+template class sm_object_impl<ipc::CallSpace_Q_2048_D_512>;
+template class sm_object_impl<ipc::CallSpace_Q_2048_D_1024>;
+template class sm_object_impl<ipc::CallSpace_Q_2048_D_2048>;
 
-template class sm_manager_impl<ipc::CallSpace<>>;
-template class sm_manager_impl<ipc::CallbackSpace<>>;
-template class sm_manager_impl<ipc::EventSpace<>>;
+template class sm_manager_impl<ipc::CallSpace_Default>;
+template class sm_manager_impl<ipc::CallSpace_Q_1024_D_1024>;
+template class sm_manager_impl<ipc::CallSpace_Q_1024_D_2048>;
+template class sm_manager_impl<ipc::CallSpace_Q_2048_D_512>;
+template class sm_manager_impl<ipc::CallSpace_Q_2048_D_1024>;
+template class sm_manager_impl<ipc::CallSpace_Q_2048_D_2048>;
+
+// CallbackSpace
+template class sm_object_impl<ipc::CallbackSpace_Default>;
+template class sm_object_impl<ipc::CallbackSpace_Q_1024_D_1024>;
+template class sm_object_impl<ipc::CallbackSpace_Q_1024_D_2048>;
+template class sm_object_impl<ipc::CallbackSpace_Q_2048_D_512>;
+template class sm_object_impl<ipc::CallbackSpace_Q_2048_D_1024>;
+template class sm_object_impl<ipc::CallbackSpace_Q_2048_D_2048>;
+
+template class sm_manager_impl<ipc::CallbackSpace_Default>;
+template class sm_manager_impl<ipc::CallbackSpace_Q_1024_D_1024>;
+template class sm_manager_impl<ipc::CallbackSpace_Q_1024_D_2048>;
+template class sm_manager_impl<ipc::CallbackSpace_Q_2048_D_512>;
+template class sm_manager_impl<ipc::CallbackSpace_Q_2048_D_1024>;
+template class sm_manager_impl<ipc::CallbackSpace_Q_2048_D_2048>;
+
+// EventSpace
+template class sm_object_impl<ipc::EventSpace_Default>;
+template class sm_object_impl<ipc::EventSpace_C_32>;
+template class sm_object_impl<ipc::EventSpace_C_64>;
+
+template class sm_manager_impl<ipc::EventSpace_Default>;
+template class sm_manager_impl<ipc::EventSpace_C_32>;
+template class sm_manager_impl<ipc::EventSpace_C_64>;
 
 } // namespace psi

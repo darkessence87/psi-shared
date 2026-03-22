@@ -10,6 +10,8 @@
 
 #include "psi/shared/i_sm_managers.h"
 
+#include "psi/shared/ipc_config.h"
+
 namespace psi::ipc::server {
 
 class IServerIPCBase
@@ -17,12 +19,17 @@ class IServerIPCBase
     template <typename C>
     using ServiceMemoryPtr = std::shared_ptr<i_typed_sm_manager<C>>;
 
-    using CallMemoryPtr = ServiceMemoryPtr<CallSpace<>>;
-    using CbMemoryPtr = ServiceMemoryPtr<CallbackSpace<>>;
-    using EvMemoryPtr = ServiceMemoryPtr<EventSpace<>>;
+    using CallMemoryPtr = ServiceMemoryPtr<IPCConfig::User_CallSpace>;
+    using CbMemoryPtr = ServiceMemoryPtr<IPCConfig::User_CallbackSpace>;
+    using EvMemoryPtr = ServiceMemoryPtr<IPCConfig::User_EventSpace>;
 
 public:
-    IServerIPCBase(const std::string &serviceName);
+    IServerIPCBase(const std::string &serviceName)
+        : m_callMemory(allocateMemory<IPCConfig::User_CallSpace>(serviceName))
+        , m_cbMemory(allocateMemory<IPCConfig::User_CallbackSpace>(serviceName))
+        , m_evMemory(allocateMemory<IPCConfig::User_EventSpace>(serviceName))
+    {
+    }
     virtual ~IServerIPCBase();
 
     void run(std::chrono::microseconds = std::chrono::microseconds(1));
@@ -53,16 +60,7 @@ private:
     template <typename C>
     ServiceMemoryPtr<C> allocateMemory(const std::string &name)
     {
-        std::shared_ptr<i_sm_manager> mgr = nullptr;
-        if constexpr (std::is_same_v<C, CallSpace<>>) {
-            mgr = i_sm_managers::create_CallSpace(name);
-        }
-        if constexpr (std::is_same_v<C, CallbackSpace<>>) {
-            mgr = i_sm_managers::create_CallbackSpace(name);
-        }
-        if constexpr (std::is_same_v<C, EventSpace<>>) {
-            mgr = i_sm_managers::create_EventSpace(name);
-        }
+        auto mgr = i_sm_managers::create<C>(name);
 
         if (mgr->isShared()) {
             mgr->loadFromShared();

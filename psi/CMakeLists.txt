@@ -23,7 +23,7 @@ set(TEST_SRC
     tests/EventRingBuffer_Tests.cpp
     tests/EventSpace_Tests.cpp
     tests/IPCCall_Tests.cpp
-    tests/IPCCLientServer_Tests.cpp
+    tests/IPCClientServer_Tests.cpp
     tests/SerializeDeserialize_Tests.cpp
 )
 psi_make_tests("Shared" "${TEST_SRC}" "${target_lib}")

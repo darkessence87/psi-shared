@@ -18,6 +18,8 @@
 #include "psi/shared/ipc/space/EventSpace.h"
 #include "psi/thread/ILoop.h"
 
+#include "psi/shared/ipc_config.h"
+
 #include "Types.h"
 
 namespace psi::ipc::client {
@@ -30,7 +32,22 @@ class IClientIPC
 public:
     using IsServerAvailableAttribute = comm::Attribute<bool>;
 
-    IClientIPC(const std::string &name, std::shared_ptr<psi::thread::ILoop>);
+    IClientIPC(const std::string &name, std::shared_ptr<psi::thread::ILoop> loop)
+        : m_loop(loop)
+        , m_guard(this)
+        , m_callMemory(connectToService<IPCConfig::User_CallSpace>(name))
+        , m_cbMemory(connectToService<IPCConfig::User_CallbackSpace>(name))
+        , m_evMemory(connectToService<IPCConfig::User_EventSpace>(name))
+    {
+        if (!m_evClientId.has_value()) {
+            m_evMemory->lock();
+            m_evClientId = m_evMemory->read()->registerClient();
+            m_evMemory->unlock();
+        }
+
+        readConnectionData();
+    }
+
     virtual ~IClientIPC();
 
     bool connect();
@@ -69,22 +86,56 @@ protected:
 
             // case 2: args, no callback
             if constexpr (!has_cb) {
+                uint16_t args_sz = 0;
+                if (!validateCall(args.args, args_sz)) {
+                    fprintf(stderr,
+                            "Could not process methodId: %u, clientId: %u, callId: %zu as call arguments are too big "
+                            "(%u)!\n",
+                            args.methodId,
+                            m_clientId,
+                            callId,
+                            args_sz);
+                    return;
+                }
                 pushCallWithArgs(args.args, args.methodId, callId, 0);
             } else {
                 using CallbackT = std::decay_t<std::tuple_element_t<N - 1, ArgsTuple>>;
                 CallbackT cb = std::get<N - 1>(args.args);
-                auto cbIndex = pushCb(args.methodId, callId, std::move(cb), timeout);
-                if (!cbIndex.has_value()) {
-                    std::cout << "Not enough space for callback processing, callId: " << callId << std::endl;
-                    return;
-                }
 
                 // case 3: no args, callback
                 if constexpr (N == 1) {
+                    auto cbIndex = pushCb(args.methodId, callId, std::move(cb), timeout);
+                    if (!cbIndex.has_value()) {
+                        const auto error = std::format("Not enough space for callback processing, callId: {}", callId);
+                        std::cout << error << std::endl;
+                        cb.fail(IPCError::TransportFailure, error);
+                        return;
+                    }
                     pushCallWithNoArgs(args.methodId, callId, cbIndex.value());
                 } else {
                     // case 4: args, callback
                     auto argsWithoutCb = tuple_pop_back(args.args);
+
+                    uint16_t args_sz = 0;
+                    if (!validateCall(argsWithoutCb, args_sz)) {
+                        const auto error = std::format("Could not process methodId: {}, clientId: {}, callId: {} as "
+                                                       "call arguments are too big ({})!",
+                                                       args.methodId,
+                                                       m_clientId,
+                                                       callId,
+                                                       args_sz);
+                        std::cout << error << std::endl;
+                        cb.fail(IPCError::InvalidPayload, error);
+                        return;
+                    }
+                    
+                    auto cbIndex = pushCb(args.methodId, callId, std::move(cb), timeout);
+                    if (!cbIndex.has_value()) {
+                        const auto error = std::format("Not enough space for callback processing, callId: {}", callId);
+                        std::cout << error << std::endl;
+                        cb.fail(IPCError::TransportFailure, error);
+                        return;
+                    }
                     pushCallWithArgs(argsWithoutCb, args.methodId, callId, cbIndex.value());
                 }
             }
@@ -165,16 +216,7 @@ private:
     template <typename C>
     SharedMemoryPtr<C> connectToService(const std::string &name)
     {
-        std::shared_ptr<i_sm_manager> mem = nullptr;
-        if constexpr (std::is_same_v<C, CallSpace<>>) {
-            mem = i_sm_managers::create_CallSpace(name);
-        }
-        if constexpr (std::is_same_v<C, CallbackSpace<>>) {
-            mem = i_sm_managers::create_CallbackSpace(name);
-        }
-        if constexpr (std::is_same_v<C, EventSpace<>>) {
-            mem = i_sm_managers::create_EventSpace(name);
-        }
+        auto mem = i_sm_managers::create<C>(name);
 
         if (mem->isShared()) {
             std::cout << "[IClientIPC] Connected to existing service [" << mem->name() << "]" << std::endl;
@@ -199,9 +241,9 @@ private:
     }
 
     template <typename... A>
-    void pushCallWithArgs(const std::tuple<A...> &call_args, uint16_t method_id, size_t call_id, uint16_t cb_index)
+    bool validateCall(const std::tuple<A...> &call_args, uint16_t& args_sz)
     {
-        uint16_t args_sz = 0;
+        args_sz = 0;
         fnPerTuple(
             [&](const auto &arg) -> int {
                 args_sz += serializer::sizeOfArgs(arg);
@@ -210,15 +252,15 @@ private:
             call_args);
 
         if (args_sz > MAX_CALL_SZ - IPCCall::HEAD_SZ) {
-            fprintf(stderr,
-                    "Could not process methodId: %u, clientId: %u, callId: %zu as call arguments are too big (%u)!\n",
-                    method_id,
-                    m_clientId,
-                    call_id,
-                    args_sz);
-            return;
+            return false;
         }
 
+        return true;
+    }
+
+    template <typename... A>
+    void pushCallWithArgs(const std::tuple<A...> &call_args, uint16_t method_id, size_t call_id, uint16_t cb_index)
+    {
         uint8_t serialized_call[MAX_CALL_SZ] = {};
 
         IPCCall call_info {call_id, method_id, m_clientId, cb_index};
@@ -246,14 +288,18 @@ private:
         CallbackInfo cbInfo;
         cbInfo.timeout = std::chrono::high_resolution_clock().now() + std::chrono::milliseconds(timeout);
         cbInfo.cbIndex = cbIndex.value();
-        cbInfo.fn = [this, methodId, callId, cb_ = std::move(cb), cbIndex_ = cbIndex.value()](uint8_t *data) {
+        cbInfo.fn = [this, methodId, callId, cb_ = std::move(cb), cbIndex_ = cbIndex.value(), timeout](uint8_t *data) {
             if (data == nullptr) {
-                std::cerr << "methodId: " << methodId << ", clientId: " << m_clientId << ", callId: " << callId
-                          << " callback timeout!" << std::endl;
+                const std::string error_msg = std::format("IPC timeout ({} ms), methodId: {}, clientId: {}, callId: {}",
+                                                          timeout,
+                                                          methodId,
+                                                          m_clientId,
+                                                          callId);
+                std::cerr << error_msg << std::endl;
                 m_cbMemory->lock();
                 m_cbMemory->read()->clearCallback(cbIndex_);
                 m_cbMemory->unlock();
-                cb_.fail(IPCError::Timeout);
+                cb_.fail(IPCError::Timeout, error_msg);
                 return;
             }
 
@@ -291,11 +337,11 @@ private:
     std::atomic<bool> m_isTrackingConnection = false;
     uint16_t m_clientId = 0;
 
-    static constexpr uint16_t MAX_CALL_SZ = CallSpace<>::CALL_SZ;
-    static constexpr uint16_t MAX_EVENT_SZ = EventSpace<>::EVENT_SZ;
-    SharedMemoryPtr<CallSpace<>> m_callMemory;
-    SharedMemoryPtr<CallbackSpace<>> m_cbMemory;
-    SharedMemoryPtr<EventSpace<>> m_evMemory;
+    static constexpr uint16_t MAX_CALL_SZ = IPCConfig::User_CallSpace::CALL_SZ;
+    static constexpr uint16_t MAX_EVENT_SZ = IPCConfig::User_EventSpace::EVENT_SZ;
+    SharedMemoryPtr<IPCConfig::User_CallSpace> m_callMemory;
+    SharedMemoryPtr<IPCConfig::User_CallbackSpace> m_cbMemory;
+    SharedMemoryPtr<IPCConfig::User_EventSpace> m_evMemory;
 
     std::thread m_cbDataThread;
     std::thread m_evDataThread;

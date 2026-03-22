@@ -2,6 +2,7 @@
 
 #include "Common.h"
 
+#include <string>
 #include <tuple>
 
 namespace psi::ipc::deserializer {

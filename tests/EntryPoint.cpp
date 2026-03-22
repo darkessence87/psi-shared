@@ -1,3 +1,4 @@
+
 #include "psi/test/psi_test.h"
 
 #include <span>
@@ -15,8 +16,6 @@
     } while (0)
 #endif
 
-extern void register_all_tests();
-
 int main(int argc, char *argv[])
 {
     LOG_INFO_STATIC("Start tests main");
@@ -25,13 +24,15 @@ int main(int argc, char *argv[])
 #pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-container"
     auto args = std::span<char *> {argv, static_cast<size_t>(argc)};
 #pragma clang diagnostic pop
+
     auto opts = psi::test::TestLib::parse_args(args);
 
     psi::test::TestLib::init();
-    register_all_tests();
+
     int result = psi::test::TestLib::run(opts.filter);
 
     psi::test::TestLib::destroy();
+
     LOG_INFO_STATIC("Exit tests main");
 
     return result;

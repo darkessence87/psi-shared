@@ -18,6 +18,7 @@ class EventSpace final
     using EventData = std::array<EventRingBuffer<MAX_QUEUE_SIZE, MAX_DATA_LENGTH>, MAX_CLIENTS_SIZE>;
 
 public:
+    static constexpr uint16_t CLIENTS_SIZE = MAX_CLIENTS_SIZE;
     static constexpr uint16_t EVENT_SZ = MAX_DATA_LENGTH;
 
     struct EventView {
@@ -101,5 +102,9 @@ private:
 
     bool m_isAvailable = false;
 };
+
+using EventSpace_Default = EventSpace<>;
+using EventSpace_C_32 = EventSpace<32>;
+using EventSpace_C_64 = EventSpace<64>;
 
 } // namespace psi::ipc

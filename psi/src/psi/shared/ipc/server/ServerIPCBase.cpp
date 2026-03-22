@@ -2,13 +2,6 @@
 
 namespace psi::ipc::server {
 
-IServerIPCBase::IServerIPCBase(const std::string &serviceName)
-    : m_callMemory(allocateMemory<CallSpace<>>(serviceName))
-    , m_cbMemory(allocateMemory<CallbackSpace<>>(serviceName))
-    , m_evMemory(allocateMemory<EventSpace<>>(serviceName))
-{
-}
-
 IServerIPCBase::~IServerIPCBase()
 {
     m_isActive = false;

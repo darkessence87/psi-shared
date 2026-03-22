@@ -25,15 +25,13 @@ class CallbackSpace final
     };
 
 public:
+    static constexpr uint16_t QUEUE_SIZE = MAX_QUEUE_SIZE;
+    static constexpr uint16_t DATA_SIZE = MAX_DATA_LENGTH;
+
     struct CallbackView {
         uint8_t *data;
         uint16_t sz;
     };
-
-    CallbackSpace()
-        : m_cbData()
-    {
-    }
 
     void setAvailable(bool value)
     {
@@ -120,8 +118,15 @@ public:
     }
 
 private:
-    CallbackData m_cbData;
+    CallbackData m_cbData {};
     bool m_isAvailable = false;
 };
+
+using CallbackSpace_Default = CallbackSpace<>;
+using CallbackSpace_Q_1024_D_1024 = CallbackSpace<1024, 1024>;
+using CallbackSpace_Q_1024_D_2048 = CallbackSpace<1024, 2048>;
+using CallbackSpace_Q_2048_D_512 = CallbackSpace<2048, 512>;
+using CallbackSpace_Q_2048_D_1024 = CallbackSpace<2048, 1024>;
+using CallbackSpace_Q_2048_D_2048 = CallbackSpace<2048, 2048>;
 
 } // namespace psi::ipc

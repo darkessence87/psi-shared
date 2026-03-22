@@ -17,6 +17,9 @@ class EventRingBuffer
     using Storage = std::array<std::array<uint8_t, SLOT_SIZE>, MAX_QUEUE_SIZE>;
 
 public:
+    static constexpr uint16_t QUEUE_SIZE = MAX_QUEUE_SIZE;
+    static constexpr uint16_t DATA_SIZE = MAX_DATA_LENGTH;
+
     struct BufferView {
         uint16_t event_id;
         const uint8_t *data;
