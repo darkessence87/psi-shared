@@ -1,9 +1,3 @@
-
-include_directories(
-    include
-    src
-)
-
 set(SOURCES
     src/psi/shared/os_mutex.cpp
     src/psi/shared/ipc/client/ClientIPC.cpp
@@ -15,6 +9,16 @@ set(SOURCES
 set (target_lib "psi-shared")
 
 add_library(${target_lib} STATIC ${SOURCES})
+add_library(psi::shared ALIAS ${target_lib})
+
+target_include_directories(${target_lib}
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
 psi_config_target(${target_lib})
 
 set(TEST_SRC
