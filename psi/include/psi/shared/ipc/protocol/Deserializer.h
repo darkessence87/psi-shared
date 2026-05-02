@@ -2,6 +2,7 @@
 
 #include "Common.h"
 
+#include <limits>
 #include <string>
 #include <tuple>
 
@@ -29,6 +30,10 @@ template <>
 inline std::string deserializeType<std::string>(const uint8_t *data, SIZE_TYPE& offset)
 {
     const uint64_t len = deserializeType<STRING_HEADER_TYPE>(data, offset);
+    // Guard against malformed headers: prevent SIZE_TYPE (uint16_t) overflow.
+    if (len == 0 || len > std::numeric_limits<SIZE_TYPE>::max()) {
+        return {};
+    }
     std::string result;
     result.resize(len);
 #pragma clang diagnostic push
@@ -36,7 +41,7 @@ inline std::string deserializeType<std::string>(const uint8_t *data, SIZE_TYPE& 
 #pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
     std::memcpy(result.data(), data + offset, len);
 #pragma clang diagnostic pop
-    offset += len;
+    offset += static_cast<SIZE_TYPE>(len);
     return result;
 }
 
@@ -46,9 +51,15 @@ inline C deserializeType(const uint8_t *const data, SIZE_TYPE& offset)
     using T = typename C::value_type;
 
     const uint64_t vector_sz = deserializeType<VECTOR_HEADER_TYPE>(data, offset);
+    // Guard against malformed headers: prevent SIZE_TYPE (uint16_t) overflow
+    // when advancing the offset. Higher-level IPC call checks enforce the
+    // per-call payload limit; this guard only prevents integer overflow.
+    if (vector_sz == 0 || vector_sz > (std::numeric_limits<SIZE_TYPE>::max() / sizeof(T))) {
+        return {};
+    }
 
     std::vector<T> result;
-    result.resize(vector_sz);
+    result.resize(static_cast<std::size_t>(vector_sz));
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunsafe-buffer-usage-in-libc-call"
 #pragma clang diagnostic ignored "-Wunsafe-buffer-usage"

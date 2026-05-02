@@ -147,7 +147,7 @@ TEST(IPCCall_Tests, IPCCall_deserialize)
         EXPECT_EQ(result.m_args_sz, 50);
     }
 
-    // case 3: max
+    // case 3: boundary - args_sz exactly at MAX_ARGS_SZ is preserved
     {
         memset(buffer, 0, sizeof(buffer));
 
@@ -155,7 +155,7 @@ TEST(IPCCall_Tests, IPCCall_deserialize)
                  std::numeric_limits<uint16_t>::max(),
                  std::numeric_limits<uint16_t>::max(),
                  std::numeric_limits<uint16_t>::max(),
-                 std::numeric_limits<uint16_t>::max(),
+                 IPCCall::MAX_ARGS_SZ,
                  5);
 
         IPCCall result;
@@ -165,7 +165,24 @@ TEST(IPCCall_Tests, IPCCall_deserialize)
         EXPECT_EQ(result.m_method_id, std::numeric_limits<uint16_t>::max());
         EXPECT_EQ(result.m_client_id, std::numeric_limits<uint16_t>::max());
         EXPECT_EQ(result.m_cb_index, std::numeric_limits<uint16_t>::max());
-        EXPECT_EQ(result.m_args_sz, std::numeric_limits<uint16_t>::max());
+        EXPECT_EQ(result.m_args_sz, IPCCall::MAX_ARGS_SZ);
+    }
+
+    // case 4: oversized args_sz is clamped to 0
+    {
+        memset(buffer, 0, sizeof(buffer));
+
+        uint16_t oversized = IPCCall::MAX_ARGS_SZ + 1u;
+        writeRaw(1, 2, 3, 4, oversized, 0);
+
+        IPCCall result;
+        result.deserialize(buffer, 0);
+
+        EXPECT_EQ(result.m_call_id, 1);
+        EXPECT_EQ(result.m_method_id, 2);
+        EXPECT_EQ(result.m_client_id, 3);
+        EXPECT_EQ(result.m_cb_index, 4);
+        EXPECT_EQ(result.m_args_sz, 0u);
     }
 }
 
@@ -173,7 +190,7 @@ TEST(IPCCall_Tests, IPCCall_roundtrip)
 {
     uint8_t buffer[32];
 
-    IPCCall src {0x5566778899aabbccull, 0x1122, 0x3344, 0xddee, 0xff00};
+    IPCCall src {0x5566778899aabbccull, 0x1122, 0x3344, 0xddee, 0x01f0};
     uint64_t written = src.serialize(buffer);
 
     IPCCall dst;

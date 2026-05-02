@@ -48,7 +48,7 @@ private:
             if (i + IPCCall::HEAD_SZ > queueSz) {
                 break;
             }
-            IPCCall ipcCall;
+            IPCCallT<IPCConfig::User_CallSpace::CALL_SZ> ipcCall;
             ipcCall.deserialize(queue, i);
             i += IPCCall::HEAD_SZ;
 

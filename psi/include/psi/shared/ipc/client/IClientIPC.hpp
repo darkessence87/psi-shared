@@ -71,15 +71,14 @@ protected:
     template <typename... A>
     void callServer(CallStruct<A...> args, int timeout = 10000)
     {
-        static size_t callId = 0;
-        ++callId;
+        ++m_callId;
 
         using ArgsTuple = decltype(args.args);
         constexpr size_t N = std::tuple_size_v<ArgsTuple>;
 
         // case 1: no args, no callback = empty call
         if constexpr (N == 0) {
-            pushCallWithNoArgs(args.methodId, callId, 0);
+            pushCallWithNoArgs(args.methodId, m_callId, 0);
         } else {
             using Last = std::tuple_element_t<N - 1, ArgsTuple>;
             constexpr bool has_cb = is_ipc_callback_v<Last>;
@@ -93,25 +92,25 @@ protected:
                             "(%u)!\n",
                             args.methodId,
                             m_clientId,
-                            callId,
+                            m_callId,
                             args_sz);
                     return;
                 }
-                pushCallWithArgs(args.args, args.methodId, callId, 0);
+                pushCallWithArgs(args.args, args.methodId, m_callId, 0);
             } else {
                 using CallbackT = std::decay_t<std::tuple_element_t<N - 1, ArgsTuple>>;
                 CallbackT cb = std::get<N - 1>(args.args);
 
                 // case 3: no args, callback
                 if constexpr (N == 1) {
-                    auto cbIndex = pushCb(args.methodId, callId, std::move(cb), timeout);
+                    auto cbIndex = pushCb(args.methodId, m_callId, std::move(cb), timeout);
                     if (!cbIndex.has_value()) {
-                        const auto error = std::format("Not enough space for callback processing, callId: {}", callId);
+                        const auto error = std::format("Not enough space for callback processing, callId: {}", m_callId);
                         std::cout << error << std::endl;
                         cb.fail(IPCError::TransportFailure, error);
                         return;
                     }
-                    pushCallWithNoArgs(args.methodId, callId, cbIndex.value());
+                    pushCallWithNoArgs(args.methodId, m_callId, cbIndex.value());
                 } else {
                     // case 4: args, callback
                     auto argsWithoutCb = tuple_pop_back(args.args);
@@ -122,21 +121,21 @@ protected:
                                                        "call arguments are too big ({})!",
                                                        args.methodId,
                                                        m_clientId,
-                                                       callId,
+                                                       m_callId,
                                                        args_sz);
                         std::cout << error << std::endl;
                         cb.fail(IPCError::InvalidPayload, error);
                         return;
                     }
                     
-                    auto cbIndex = pushCb(args.methodId, callId, std::move(cb), timeout);
+                    auto cbIndex = pushCb(args.methodId, m_callId, std::move(cb), timeout);
                     if (!cbIndex.has_value()) {
-                        const auto error = std::format("Not enough space for callback processing, callId: {}", callId);
+                        const auto error = std::format("Not enough space for callback processing, callId: {}", m_callId);
                         std::cout << error << std::endl;
                         cb.fail(IPCError::TransportFailure, error);
                         return;
                     }
-                    pushCallWithArgs(argsWithoutCb, args.methodId, callId, cbIndex.value());
+                    pushCallWithArgs(argsWithoutCb, args.methodId, m_callId, cbIndex.value());
                 }
             }
         }
@@ -233,7 +232,7 @@ private:
     void pushCallWithNoArgs(uint16_t methodId, uint64_t callId, uint16_t cbIndex)
     {
         uint8_t serializedCall[MAX_CALL_SZ] = {'\0'};
-        IPCCall callInfo {callId, methodId, m_clientId, cbIndex, 0u};
+        IPCCallT<MAX_CALL_SZ> callInfo {callId, methodId, m_clientId, cbIndex, 0u};
         const auto n = callInfo.serialize(serializedCall);
         m_callMemory->lock();
         m_callMemory->read()->push(serializedCall, n);
@@ -263,7 +262,7 @@ private:
     {
         uint8_t serialized_call[MAX_CALL_SZ] = {};
 
-        IPCCall call_info {call_id, method_id, m_clientId, cb_index};
+        IPCCallT<MAX_CALL_SZ> call_info {call_id, method_id, m_clientId, cb_index};
         uint32_t serialized_sz = call_info.serialize_with_args(serialized_call, call_args);
 
         m_callMemory->lock();
@@ -336,6 +335,7 @@ private:
     std::atomic<bool> m_isActive = false;
     std::atomic<bool> m_isTrackingConnection = false;
     uint16_t m_clientId = 0;
+    size_t m_callId = 0;
 
     static constexpr uint16_t MAX_CALL_SZ = IPCConfig::User_CallSpace::CALL_SZ;
     static constexpr uint16_t MAX_EVENT_SZ = IPCConfig::User_EventSpace::EVENT_SZ;

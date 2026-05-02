@@ -71,7 +71,8 @@ private:
             std::cout << "[IServerIPCBase] Initialized service [" << mgr->name() << "] for all connected clients"
                       << std::endl;
         } else {
-            static C space = C();
+            static C space;
+            space = C();
             space.setAvailable(true);
             mgr->loadToShared(&space, sizeof(C));
             std::cout << "[IServerIPCBase] Created service [" << mgr->name() << "]" << std::endl;

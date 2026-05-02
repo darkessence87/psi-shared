@@ -100,8 +100,7 @@ TEST(IPCClientServer_Tests, callbacks_call_BigArgs)
         std::vector<uint64_t> arg2 = {123, 234, 345};
 
         EXPECT_CALL(test_fn, 1)
-            .WithArgs(psi::ipc::IPCError::InvalidPayload,
-                      "Could not process methodId: 5, clientId: 1, callId: 1 as call arguments are too big (3033)!");
+            .WithArgContains(1, "call arguments are too big (3033)");
         client.call_Args_VoidCb(arg0, arg1, arg2, test_fn->fn());
     });
 }

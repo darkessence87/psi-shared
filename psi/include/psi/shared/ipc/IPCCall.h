@@ -7,9 +7,10 @@
 
 namespace psi::ipc {
 
-struct IPCCall {
+template <uint16_t SLOT_SZ = 512u>
+struct IPCCallT {
     static constexpr uint16_t HEAD_SZ = 2 + 2 + 8 + 2;
-    static constexpr uint16_t MAX_ARGS_SZ = 512u - HEAD_SZ - 2u;
+    static constexpr uint16_t MAX_ARGS_SZ = SLOT_SZ - HEAD_SZ - 2u;
 
     inline uint16_t serialize(uint8_t *buffer)
     {
@@ -61,7 +62,12 @@ struct IPCCall {
 #pragma clang diagnostic pop
 
         if (m_args_sz > MAX_ARGS_SZ) {
-            /// @todo
+            // Malformed or oversized payload: clamp to zero so callers do not
+            // attempt to read args from out-of-bounds memory.  The call will
+            // still be dispatched but with an empty argument list, which is
+            // safe because the method handler will receive wrong args and the
+            // callback (if any) will return an appropriate IPC error.
+            m_args_sz = 0u;
         }
     }
 
@@ -72,5 +78,7 @@ struct IPCCall {
     uint16_t m_cb_index = 0u;
     uint16_t m_args_sz = 0u;
 };
+
+using IPCCall = IPCCallT<512u>;
 
 } // namespace psi::ipc

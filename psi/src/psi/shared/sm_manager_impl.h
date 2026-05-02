@@ -3,6 +3,7 @@
 
 #include <assert.h>
 #include <map>
+#include <mutex>
 
 #include "psi/shared/i_sm_manager.h"
 
@@ -33,7 +34,11 @@ public:
 
     static std::shared_ptr<sm_manager_impl> create(const std::string &name = "")
     {
+        // Static mutex protects concurrent first-call initialization.
+        static std::mutex s_createMutex;
         static auto *managers = new std::map<std::string, std::shared_ptr<sm_manager_impl<C>>>();
+
+        std::lock_guard<std::mutex> guard(s_createMutex);
         auto itr = managers->find(name);
         if (itr != managers->end()) {
             return itr->second;
