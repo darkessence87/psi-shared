@@ -32,7 +32,7 @@ public:
         freeMemory();
     }
 
-    static std::shared_ptr<sm_manager_impl> create(const std::string &name = "")
+    static std::shared_ptr<sm_manager_impl> create(const std::string &name = std::string{})
     {
         // Static mutex protects concurrent first-call initialization.
         static std::mutex s_createMutex;
