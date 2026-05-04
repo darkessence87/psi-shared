@@ -221,8 +221,8 @@ private:
             std::cout << "[IClientIPC] Connected to existing service [" << mem->name() << "]" << std::endl;
             mem->loadFromShared();
         } else {
-            static C space = C();
-            mem->loadToShared(&space, sizeof(C));
+            auto space = std::make_unique<C>();
+            mem->loadToShared(space.get(), sizeof(C));
             std::cout << "[IClientIPC] Connected to new service [" << mem->name() << "]" << std::endl;
         }
 
