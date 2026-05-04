@@ -41,7 +41,8 @@ protected:
     template <typename... Args>
     void notifyEvent(uint16_t event_id, Args... args)
     {
-        uint8_t data[512] = {};
+        constexpr size_t DATA_SIZE = IPCConfig::User_EventSpace::EVENT_SZ;
+        uint8_t data[DATA_SIZE] = {};
         const auto n = serializer::serializeType(data, args...);
         auto mem = m_evMemory->getSharedMemory();
         mem->lock();

@@ -49,7 +49,8 @@ struct MemberFnWrapper {
                     m_any = Func([=](T &caller, auto, auto cb) mutable {
                         using CallbackT = std::decay_t<Last>;
                         CallbackT fn {[cb](uint16_t error_code, const std::string &error_msg, auto... args_) {
-                            uint8_t data[512] = {};
+                            constexpr size_t DATA_SIZE = psi::ipc::IPCConfig::User_CallbackSpace::DATA_SIZE;
+                            uint8_t data[DATA_SIZE] = {};
                             const auto n = CallbackT::serialize(data, error_code, error_msg, args_...);
                             cb(data, n);
                         }};
@@ -70,7 +71,8 @@ struct MemberFnWrapper {
                             params);
                         using CallbackT = std::decay_t<Last>;
                         CallbackT fn {[cb](uint16_t error_code, const std::string &error_msg, auto... args_) {
-                            uint8_t data[512] = {};
+                            constexpr size_t DATA_SIZE = psi::ipc::IPCConfig::User_CallbackSpace::DATA_SIZE;
+                            uint8_t data[DATA_SIZE] = {};
                             const auto n = CallbackT::serialize(data, error_code, error_msg, args_...);
                             cb(data, n);
                         }};
@@ -108,7 +110,8 @@ struct MemberFnWrapper {
 
                 using CallbackT = IPCCallback<R>;
                 CallbackT fn {[cb](uint16_t error_code, const std::string &error_msg, auto... args_) {
-                    uint8_t data[512] = {};
+                    constexpr size_t DATA_SIZE = psi::ipc::IPCConfig::User_CallbackSpace::DATA_SIZE;
+                    uint8_t data[DATA_SIZE] = {};
                     const auto n = CallbackT::serialize(data, error_code, error_msg, args_...);
                     cb(data, n);
                 }};
@@ -130,7 +133,8 @@ struct MemberFnWrapper {
 
                 using CallbackT = IPCCallback<R>;
                 CallbackT fn {[cb](uint16_t error_code, const std::string &error_msg, auto... args_) {
-                    uint8_t data[512] = {};
+                    constexpr size_t DATA_SIZE = psi::ipc::IPCConfig::User_CallbackSpace::DATA_SIZE;
+                    uint8_t data[DATA_SIZE] = {};
                     const auto n = CallbackT::serialize(data, error_code, error_msg, args_...);
                     cb(data, n);
                 }};

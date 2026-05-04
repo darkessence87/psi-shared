@@ -13,8 +13,8 @@ namespace psi::ipc {
 template <uint16_t MAX_CLIENTS_SIZE = 16u>
 class EventSpace final
 {
-    static constexpr uint16_t MAX_QUEUE_SIZE = 128u;
-    static constexpr uint16_t MAX_DATA_LENGTH = 256u;
+    static constexpr uint16_t MAX_QUEUE_SIZE = 1024u;
+    static constexpr uint16_t MAX_DATA_LENGTH = 512u;
     using EventData = std::array<EventRingBuffer<MAX_QUEUE_SIZE, MAX_DATA_LENGTH>, MAX_CLIENTS_SIZE>;
 
 public:
