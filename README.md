@@ -1,4 +1,3 @@
-IN_PROGRESS
 # Description
 This library is used for communication between processes (IPC) in a scope of single machine using shared memory approach.
 
