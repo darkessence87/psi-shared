@@ -2,6 +2,7 @@
 
 #include "Common.h"
 
+#include <cstring>
 #include <string>
 
 namespace psi::ipc::serializer {

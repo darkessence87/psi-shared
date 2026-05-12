@@ -5,6 +5,11 @@
 #include <map>
 #include <mutex>
 
+#ifdef __linux__
+#include <fcntl.h>
+#include <sys/stat.h>
+#endif
+
 #include "psi/shared/i_sm_manager.h"
 
 #include "sm_object_impl.h"

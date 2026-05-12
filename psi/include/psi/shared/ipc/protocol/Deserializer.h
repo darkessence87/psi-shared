@@ -2,6 +2,7 @@
 
 #include "Common.h"
 
+#include <cstring>
 #include <limits>
 #include <string>
 #include <tuple>

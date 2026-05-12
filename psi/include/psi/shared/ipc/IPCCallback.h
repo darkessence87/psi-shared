@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <cstring>
 #include <functional>
 
 #include "IPCError.h"

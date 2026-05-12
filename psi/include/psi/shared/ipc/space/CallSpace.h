@@ -1,7 +1,10 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
+#include <cstring>
 #include <iostream>
+#include <limits>
 #include <optional>
 
 namespace psi::ipc {
