@@ -2,6 +2,7 @@
 #include "psi/test/TestHelper.h"
 #include "psi/test/psi_mock.h"
 
+#include "psi/shared/i_sm_managers.h"
 #include "psi/shared/ipc/space/CallSpace.h"
 
 using namespace psi::ipc;
@@ -153,3 +154,24 @@ void impl_CALL_SZ()
     }
 
 CALLSPACE_TYPES(GENERATE_CALLSPACE_TESTS)
+
+TEST(CallSpaceTests, SmManagers_create_all_types)
+{
+    using namespace psi;
+    using namespace psi::ipc;
+    EXPECT_TRUE(i_sm_managers::create<CallSpace_Default>("t") != nullptr);
+    EXPECT_TRUE(i_sm_managers::create<CallSpace_Q_1024_D_1024>("t") != nullptr);
+    EXPECT_TRUE(i_sm_managers::create<CallSpace_Q_1024_D_2048>("t") != nullptr);
+    EXPECT_TRUE(i_sm_managers::create<CallSpace_Q_2048_D_512>("t") != nullptr);
+    EXPECT_TRUE(i_sm_managers::create<CallSpace_Q_2048_D_1024>("t") != nullptr);
+    EXPECT_TRUE(i_sm_managers::create<CallSpace_Q_2048_D_2048>("t") != nullptr);
+    EXPECT_TRUE(i_sm_managers::create<CallbackSpace_Default>("t") != nullptr);
+    EXPECT_TRUE(i_sm_managers::create<CallbackSpace_Q_1024_D_1024>("t") != nullptr);
+    EXPECT_TRUE(i_sm_managers::create<CallbackSpace_Q_1024_D_2048>("t") != nullptr);
+    EXPECT_TRUE(i_sm_managers::create<CallbackSpace_Q_2048_D_512>("t") != nullptr);
+    EXPECT_TRUE(i_sm_managers::create<CallbackSpace_Q_2048_D_1024>("t") != nullptr);
+    EXPECT_TRUE(i_sm_managers::create<CallbackSpace_Q_2048_D_2048>("t") != nullptr);
+    EXPECT_TRUE(i_sm_managers::create<EventSpace_Default>("t") != nullptr);
+    EXPECT_TRUE(i_sm_managers::create<EventSpace_C_32>("t") != nullptr);
+    EXPECT_TRUE(i_sm_managers::create<EventSpace_C_64>("t") != nullptr);
+}
