@@ -1,4 +1,6 @@
 
+#include <condition_variable>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -151,4 +153,40 @@ TEST(IPCClientServer_Tests, events_vectorStringEvent)
         server.notify_VectorStringEvent({"a", "bb", "cccc"});
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     });
+}
+
+TEST(IPCClientServer_Tests, server_available_when_running)
+{
+    TestServer server;
+    TestClient client;
+
+    ASSERT_TRUE(client.isServerAvailableAttribute().value());
+}
+
+TEST(IPCClientServer_Tests, server_unavailable_detected_after_destruction)
+{
+    auto server = std::make_unique<TestServer>();
+    TestClient client;
+
+    ASSERT_TRUE(client.isServerAvailableAttribute().value());
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool detectedFalse = false;
+
+    auto sub = client.isServerAvailableAttribute().subscribe([&](bool, bool newVal) {
+        if (!newVal) {
+            std::lock_guard<std::mutex> lk(mtx);
+            detectedFalse = true;
+            cv.notify_one();
+        }
+    });
+
+    server.reset();
+
+    std::unique_lock<std::mutex> lk(mtx);
+    const bool detected = cv.wait_for(lk, std::chrono::seconds(2), [&]() { return detectedFalse; });
+
+    ASSERT_TRUE(detected);
+    ASSERT_FALSE(client.isServerAvailableAttribute().value());
 }
