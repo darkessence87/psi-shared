@@ -68,30 +68,23 @@ void IClientIPC::unsubscribeFromEventUpdates(uint16_t clientId)
     m_evMemory->unlock();
 }
 
-bool IClientIPC::isConnectionStatusChanged() const
-{
-    if (m_callMemory->read()->isAvailable() != m_isServerAvailableAttribute.value()) {
-        return true;
-    }
-
-    if (m_cbMemory->read()->isAvailable() != m_isServerAvailableAttribute.value()) {
-        return true;
-    }
-
-    if (m_evMemory->read()->isAvailable() != m_isServerAvailableAttribute.value()) {
-        return true;
-    }
-
-    return false;
-}
-
 void IClientIPC::updateConnectionStatus()
 {
-    if (isConnectionStatusChanged()) {
-        const bool cond1 = m_callMemory->read()->isAvailable();
-        const bool cond2 = m_cbMemory->read()->isAvailable();
-        const bool cond3 = m_evMemory->read()->isAvailable();
-        m_isServerAvailableAttribute.setValue(cond1 && cond2 && cond3);
+    m_callMemory->lock();
+    const bool cond1 = m_callMemory->read()->isAvailable();
+    m_callMemory->unlock();
+
+    m_cbMemory->lock();
+    const bool cond2 = m_cbMemory->read()->isAvailable();
+    m_cbMemory->unlock();
+
+    m_evMemory->lock();
+    const bool cond3 = m_evMemory->read()->isAvailable();
+    m_evMemory->unlock();
+
+    const bool newStatus = cond1 && cond2 && cond3;
+    if (newStatus != m_isServerAvailableAttribute.value()) {
+        m_isServerAvailableAttribute.setValue(bool(newStatus));
     }
 }
 
@@ -225,7 +218,7 @@ void IClientIPC::readConnectionData()
 
             std::unique_lock<std::mutex> lock(m_mtxConnection);
             m_conditionConnection.wait_for(lock, std::chrono::seconds(1), [this]() {
-                return !m_isTrackingConnection || isConnectionStatusChanged();
+                return !m_isTrackingConnection;
             });
         }
 

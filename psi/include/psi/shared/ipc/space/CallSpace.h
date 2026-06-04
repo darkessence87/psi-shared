@@ -84,7 +84,7 @@ public:
 
 private:
     Data m_data;
-    bool m_isAvailable = false;
+    volatile bool m_isAvailable = false;
     uint32_t m_currentWriteIndex = 0;
     uint16_t m_lastClientId = 0;
 };

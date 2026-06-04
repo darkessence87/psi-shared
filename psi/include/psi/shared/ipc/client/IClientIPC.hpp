@@ -322,7 +322,6 @@ private:
         return cbIndex;
     }
 
-    bool isConnectionStatusChanged() const;
     void updateConnectionStatus();
 
     void readCbData();

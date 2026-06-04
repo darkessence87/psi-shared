@@ -100,7 +100,7 @@ private:
     EventData m_clients;
     std::bitset<MAX_CLIENTS_SIZE> m_registeredClients {};
 
-    bool m_isAvailable = false;
+    volatile bool m_isAvailable = false;
 };
 
 using EventSpace_Default = EventSpace<>;

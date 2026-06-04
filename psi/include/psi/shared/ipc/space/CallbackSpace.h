@@ -121,7 +121,7 @@ public:
 
 private:
     CallbackData m_cbData {};
-    bool m_isAvailable = false;
+    volatile bool m_isAvailable = false;
 };
 
 using CallbackSpace_Default = CallbackSpace<>;
